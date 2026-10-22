@@ -116,8 +116,8 @@ function order_create(PDO $pdo, array $user, array $event, string $teamKey, int 
     return order_get($pdo, $orderId);
 }
 
-/** Lance le paiement Stripe d'une commande et renvoie l'URL de la page de paiement. */
-function order_start_checkout(PDO $pdo, array $order, array $event): string
+/** Paramètres de la session de paiement Stripe Checkout d'une commande. */
+function checkout_session_params(array $order, array $event, bool $useProductId = true): array
 {
     $lineItem = [
         'quantity'   => (int)$order['quantity'],
@@ -126,7 +126,7 @@ function order_start_checkout(PDO $pdo, array $order, array $event): string
             'unit_amount' => (int)$order['unit_price_cents'],
         ],
     ];
-    if (STRIPE_PRODUCT_ID !== '') {
+    if ($useProductId && STRIPE_PRODUCT_ID !== '') {
         $lineItem['price_data']['product'] = STRIPE_PRODUCT_ID;
     } else {
         $lineItem['price_data']['product_data'] = ['name' => 'Place – Partie d\'airsoft'];
@@ -134,31 +134,95 @@ function order_start_checkout(PDO $pdo, array $order, array $event): string
 
     $description = mb_substr('Partie : ' . $event['title'] . ' (' . date('d/m/Y', strtotime($event['event_date'])) . ')', 0, 250);
 
+    return [
+        'mode'                => 'payment',
+        'line_items'          => [$lineItem],
+        'client_reference_id' => (string)$order['id'],
+        'customer_email'      => $order['buyer_email'],
+        'metadata'            => ['order_id' => $order['id'], 'event_id' => $event['id']],
+        'payment_intent_data' => [
+            'description' => $description,
+            'metadata'    => ['order_id' => $order['id']],
+        ],
+        'custom_text'         => [
+            'submit' => ['message' => $description . ' – ' . $order['quantity'] . ' place(s)'],
+        ],
+        // Marge d'une minute : Stripe exige au moins 30 min de validité
+        'expires_at'          => time() + CHECKOUT_HOLD_MINUTES * 60 + 60,
+        'locale'              => 'fr',
+        'success_url'         => SITE_URL . '/order.php?id=' . $order['id'] . '&session_id={CHECKOUT_SESSION_ID}',
+        'cancel_url'          => SITE_URL . '/order.php?id=' . $order['id'] . '&cancelled=1',
+    ];
+}
+
+/**
+ * Crée la session Stripe Checkout. Si le produit configuré n'existe pas dans ce
+ * compte Stripe (clé d'un autre compte ou passage test → live), on réessaie sans lui.
+ */
+function stripe_create_checkout_session(array $order, array $event): array
+{
     try {
-        $session = stripe_request('POST', 'checkout/sessions', [
-            'mode'                => 'payment',
-            'line_items'          => [$lineItem],
-            'client_reference_id' => (string)$order['id'],
-            'customer_email'      => $order['buyer_email'],
-            'metadata'            => ['order_id' => $order['id'], 'event_id' => $event['id']],
-            'payment_intent_data' => [
-                'description' => $description,
-                'metadata'    => ['order_id' => $order['id']],
-            ],
-            'custom_text'         => [
-                'submit' => ['message' => $description . ' – ' . $order['quantity'] . ' place(s)'],
-            ],
-            'expires_at'          => time() + CHECKOUT_HOLD_MINUTES * 60,
-            'locale'              => 'fr',
-            'success_url'         => SITE_URL . '/order.php?id=' . $order['id'] . '&session_id={CHECKOUT_SESSION_ID}',
-            'cancel_url'          => SITE_URL . '/order.php?id=' . $order['id'] . '&cancelled=1',
-        ]);
+        return stripe_request('POST', 'checkout/sessions', checkout_session_params($order, $event));
+    } catch (RuntimeException $e) {
+        if (STRIPE_PRODUCT_ID !== '' && stripos($e->getMessage(), 'No such product') !== false) {
+            error_log('Stripe : le produit ' . STRIPE_PRODUCT_ID . ' n\'existe pas avec cette clé, envoi sans produit.');
+            return stripe_request('POST', 'checkout/sessions', checkout_session_params($order, $event, false));
+        }
+        throw $e;
+    }
+}
+
+/** Explication en clair d'une erreur Stripe (pour l'admin). */
+function stripe_error_hint(string $message): string
+{
+    $m = mb_strtolower($message);
+    if (str_contains($m, 'non configurée')) {
+        return 'Renseigne STRIPE_SECRET_KEY dans config/app.php (clé secrète sk_test_… de l\'environnement de test).';
+    }
+    if (str_contains($m, 'publishable')) {
+        return 'Tu as mis la clé PUBLIQUE (pk_…). Il faut la clé SECRÈTE (sk_test_…) : Stripe › Développeurs › Clés API › « Clé secrète » › Révéler.';
+    }
+    if (str_contains($m, 'invalid api key') || str_contains($m, '(401)') || str_contains($m, 'expired api key')) {
+        return 'Clé Stripe refusée : recopie la clé secrète en entier (sk_test_…), sans espace, depuis l\'environnement de test « Mafia Airsoft Team ».';
+    }
+    if (str_contains($m, 'no such product')) {
+        return 'Le produit STRIPE_PRODUCT_ID n\'existe pas avec cette clé (clé d\'un autre compte ou d\'un autre environnement). '
+            . 'Vérifie que la clé vient bien de l\'environnement de test « Mafia Airsoft Team », ou laisse STRIPE_PRODUCT_ID vide.';
+    }
+    if (str_contains($m, 'permission') || str_contains($m, 'rk_')) {
+        return 'Clé restreinte sans les droits Checkout : utilise la clé secrète standard (sk_test_…).';
+    }
+    if (str_contains($m, 'réseau') || str_contains($m, 'curl') || str_contains($m, 'resolve') || str_contains($m, 'timed out')) {
+        return 'Le serveur n\'arrive pas à joindre api.stripe.com : contacte le support o2switch.';
+    }
+    if (str_contains($m, 'url') && str_contains($m, 'invalid')) {
+        return 'Adresse du site invalide : vérifie SITE_URL dans config/app.php (https://mafia-airsoft.com, sans / final).';
+    }
+    if (str_contains($m, 'account') && (str_contains($m, 'activate') || str_contains($m, 'activer'))) {
+        return 'Le compte Stripe n\'est pas activé pour ce mode : utilise une clé de test (sk_test_…) en attendant l\'activation.';
+    }
+    return '';
+}
+
+/** Lance le paiement Stripe d'une commande et renvoie l'URL de la page de paiement. */
+function order_start_checkout(PDO $pdo, array $order, array $event): string
+{
+    try {
+        $session = stripe_create_checkout_session($order, $event);
     } catch (Throwable $e) {
         // Le paiement n'a pas pu démarrer : on libère les places
         $pdo->prepare("UPDATE orders SET status = 'cancelled' WHERE id = ? AND status = 'pending'")
             ->execute([$order['id']]);
         error_log('Création session Stripe (commande ' . $order['id'] . ') : ' . $e->getMessage());
-        throw new OrderException('Le paiement n\'a pas pu démarrer. Réessaie dans un instant.');
+
+        $message = 'Le paiement n\'a pas pu démarrer. Réessaie dans un instant.';
+        // Les admins voient la vraie raison (les joueurs, non)
+        if (function_exists('isAdmin') && isAdmin()) {
+            $hint = stripe_error_hint($e->getMessage());
+            $message .= ' [Visible seulement par les admins] Stripe : ' . $e->getMessage() . ($hint ? ' → ' . $hint : '')
+                . ' (Diagnostic complet : Admin › Diagnostic)';
+        }
+        throw new OrderException($message);
     }
 
     $pdo->prepare("UPDATE orders SET stripe_session_id = ? WHERE id = ?")

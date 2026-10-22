@@ -94,6 +94,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $error = 'Format de fichier non autorisé. Utilisez JPG, PNG ou GIF.';
             }
         }
+    } elseif ($action === 'verify_email') {
+        // Validation manuelle (le joueur n'a pas reçu ou trouvé l'email de confirmation)
+        $stmt = $pdo->prepare("UPDATE users SET email_verified_at = NOW() WHERE id = ? AND email_verified_at IS NULL");
+        $stmt->execute([(int)$_POST['user_id']]);
+        $message = $stmt->rowCount() ? 'Email validé : le joueur peut se connecter.' : 'Ce compte était déjà validé.';
+    } elseif ($action === 'resend_verification') {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND email_verified_at IS NULL");
+        $stmt->execute([(int)$_POST['user_id']]);
+        if ($target = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            if (send_verification_email($pdo, $target)) {
+                $message = 'Email de confirmation renvoyé à ' . $target['email'] . '.';
+            } else {
+                $error = 'L\'email n\'a pas pu partir. Va dans Admin › Diagnostic pour voir pourquoi.';
+            }
+        }
     } elseif ($action === 'delete_player') {
         $user_id = $_POST['user_id'];
         
@@ -245,6 +260,18 @@ $players = $stmt->fetchAll();
                                 </div>
                                 
                                 <div class="player-actions">
+                                    <?php if (empty($player['email_verified_at'])): ?>
+                                        <form method="POST" style="display:inline;">
+                                            <input type="hidden" name="action" value="verify_email">
+                                            <input type="hidden" name="user_id" value="<?= (int)$player['id'] ?>">
+                                            <button type="submit" class="btn btn-primary btn-sm">✅ Valider l'email</button>
+                                        </form>
+                                        <form method="POST" style="display:inline;">
+                                            <input type="hidden" name="action" value="resend_verification">
+                                            <input type="hidden" name="user_id" value="<?= (int)$player['id'] ?>">
+                                            <button type="submit" class="btn btn-outline btn-sm">✉️ Renvoyer</button>
+                                        </form>
+                                    <?php endif; ?>
                                     <form method="POST" enctype="multipart/form-data" style="display:inline;">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_picture">

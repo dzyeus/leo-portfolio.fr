@@ -3,33 +3,49 @@
  * Envoi d'emails (PHPMailer + SMTP de config/app.php).
  */
 
+/** Le SMTP est-il renseigné dans config/app.php ? */
+function smtp_configured(): bool
+{
+    return SMTP_HOST !== '' && SMTP_USERNAME !== '' && SMTP_PASSWORD !== ''
+        && !str_contains(SMTP_PASSWORD, 'A_REMPLACER');
+}
+
+/** Crée un PHPMailer configuré avec le SMTP de config/app.php. */
+function mailer_create(): PHPMailer\PHPMailer\PHPMailer
+{
+    require_vendor();
+    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+    $mail->isSMTP();
+    $mail->Host       = SMTP_HOST;
+    $mail->SMTPAuth   = true;
+    $mail->Username   = SMTP_USERNAME;
+    $mail->Password   = SMTP_PASSWORD;
+    $mail->SMTPSecure = SMTP_SECURE;
+    $mail->Port       = (int)SMTP_PORT;
+    $mail->CharSet    = 'UTF-8';
+    $mail->Timeout    = 20;
+    // Ne jamais bloquer une page plus de 30 s si le serveur mail ne répond plus
+    $mail->getSMTPInstance()->Timelimit = 30;
+    $mail->setFrom(FROM_EMAIL, FROM_NAME);
+    $mail->addReplyTo(REPLY_TO_EMAIL, REPLY_TO_NAME);
+    return $mail;
+}
+
 /**
  * Envoie un email HTML. $attachments = ['nom-du-fichier.pdf' => contenu binaire, ...]
  * $headers = en-têtes supplémentaires (ex. List-Unsubscribe).
- * Renvoie true si l'email est parti. Les erreurs sont écrites dans le log PHP.
+ * Renvoie true si l'email est parti. Les erreurs sont écrites dans le log PHP
+ * (et visibles dans Admin › Diagnostic).
  */
 function send_mail(string $toEmail, string $toName, string $subject, string $html, array $attachments = [], array $headers = []): bool
 {
-    if (SMTP_HOST === '' || SMTP_USERNAME === '') {
+    if (!smtp_configured()) {
         error_log('Email non envoyé (SMTP non configuré dans config/app.php) : ' . $subject . ' → ' . $toEmail);
         return false;
     }
 
     try {
-        require_vendor();
-        $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-        $mail->isSMTP();
-        $mail->Host       = SMTP_HOST;
-        $mail->SMTPAuth   = true;
-        $mail->Username   = SMTP_USERNAME;
-        $mail->Password   = SMTP_PASSWORD;
-        $mail->SMTPSecure = SMTP_SECURE;
-        $mail->Port       = (int)SMTP_PORT;
-        $mail->CharSet    = 'UTF-8';
-        $mail->Timeout    = 20;
-
-        $mail->setFrom(FROM_EMAIL, FROM_NAME);
-        $mail->addReplyTo(REPLY_TO_EMAIL, REPLY_TO_NAME);
+        $mail = mailer_create();
         $mail->addAddress($toEmail, $toName);
 
         $mail->isHTML(true);
@@ -53,6 +69,65 @@ function send_mail(string $toEmail, string $toName, string $subject, string $htm
         error_log('Erreur envoi email "' . $subject . '" : ' . $e->getMessage());
         return false;
     }
+}
+
+/**
+ * Envoi de test avec le journal complet de la discussion avec le serveur mail
+ * (mot de passe masqué). Utilisé par admin/diagnostic.php.
+ * Renvoie ['ok' => bool, 'error' => string, 'log' => string[], 'hint' => string].
+ */
+function smtp_test(string $toEmail): array
+{
+    $log = [];
+    $result = ['ok' => false, 'error' => '', 'log' => &$log, 'hint' => ''];
+
+    if (!smtp_configured()) {
+        $result['error'] = 'SMTP non configuré : renseigne SMTP_HOST, SMTP_USERNAME et SMTP_PASSWORD dans config/app.php.';
+        return $result;
+    }
+
+    try {
+        $mail = mailer_create();
+        $mail->SMTPDebug = PHPMailer\PHPMailer\SMTP::DEBUG_SERVER;
+        $mail->Debugoutput = function ($line) use (&$log) {
+            $line = trim((string)$line);
+            if ($line !== '') {
+                $log[] = str_replace([SMTP_PASSWORD, base64_encode(SMTP_PASSWORD)], '********', $line);
+            }
+        };
+        $mail->addAddress($toEmail);
+        $mail->isHTML(true);
+        $mail->Subject = 'Test d\'envoi – ' . SITE_NAME;
+        $mail->Body = mail_layout('Test d\'envoi', '<h2 style="color:#ffffff;margin-top:0;">Ça marche ✅</h2>'
+            . '<p>Si tu lis ce message, les emails du site (confirmation de compte, billets, reçus, alertes) partent correctement.</p>');
+        $mail->AltBody = 'Ça marche : les emails du site partent correctement.';
+        $mail->send();
+        $result['ok'] = true;
+    } catch (Throwable $e) {
+        $result['error'] = $e->getMessage();
+    }
+
+    // Explication en clair des erreurs les plus courantes
+    $all = mb_strtolower($result['error'] . ' ' . implode(' ', $log));
+    if (!$result['ok']) {
+        if (str_contains($all, 'certificate') || str_contains($all, 'ssl operation failed') || str_contains($all, 'peer')) {
+            $result['hint'] = 'Problème de certificat SSL : mets dans SMTP_HOST le nom de ton serveur o2switch '
+                . '(xxxx.o2switch.net, visible dans cPanel) au lieu de mail.mafia-airsoft.com.';
+        } elseif (str_contains($all, 'authenticate') || str_contains($all, '535')) {
+            $result['hint'] = 'Identifiants refusés : SMTP_USERNAME doit être l\'adresse complète (contact@mafia-airsoft.com) '
+                . 'et SMTP_PASSWORD le mot de passe de CETTE boîte mail (cPanel › Comptes de messagerie), pas celui de cPanel.';
+        } elseif (str_contains($all, 'connect') || str_contains($all, 'timed out') || str_contains($all, 'getaddrinfo')) {
+            $result['hint'] = 'Connexion impossible : vérifie SMTP_HOST (xxxx.o2switch.net), et le couple port/sécurité : '
+                . '465 avec \'ssl\', ou 587 avec \'tls\'.';
+        } elseif (str_contains($all, 'sender') || str_contains($all, 'from')) {
+            $result['hint'] = 'Expéditeur refusé : FROM_EMAIL doit être la même adresse que SMTP_USERNAME (ou une adresse du même domaine).';
+        } elseif (str_contains($all, 'dépendances') || str_contains($all, 'composer')) {
+            $result['hint'] = 'PHPMailer manquant : le dossier vendor/ doit être présent sur le serveur (composer install).';
+        }
+    }
+    unset($result['log']);
+    $result['log'] = $log;
+    return $result;
 }
 
 /** Habillage HTML commun des emails, aux couleurs du site. */

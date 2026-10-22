@@ -62,6 +62,9 @@ $total_registrations = $stmt->fetchColumn();
                     <a href="../qr-code/dashboard.php" class="btn btn-success btn-lg">
                         <?= icon('ticket') ?> Gestion des billets
                     </a>
+                    <a href="diagnostic.php" class="btn btn-secondary btn-lg">
+                        🩺 Diagnostic (paiement, emails)
+                    </a>
                     <a href="manage_gallery.php" class="btn btn-secondary btn-lg">
                         <?= icon('image') ?> Gérer la galerie photo
                     </a>

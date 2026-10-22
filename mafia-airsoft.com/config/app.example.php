@@ -71,10 +71,12 @@ define('CHECKOUT_HOLD_MINUTES', 30);        // Durée de réservation des places
 // ---------------------------------------------------------------------
 // Si tu avais déjà un fichier qr-code/email_config.php sur le serveur,
 // tu peux recopier les mêmes valeurs ici.
-define('SMTP_HOST', 'mail.mafia-airsoft.com');
+// o2switch : mets le NOM DE TON SERVEUR (cPanel, colonne de droite), au format xxxx.o2switch.net.
+// Avec mail.mafia-airsoft.com, l'envoi peut échouer (certificat SSL). Test : Admin › Diagnostic.
+define('SMTP_HOST', 'xxxx.o2switch.net');
 define('SMTP_PORT', 465);
 define('SMTP_USERNAME', 'contact@mafia-airsoft.com');
-define('SMTP_PASSWORD', 'A_REMPLACER');
+define('SMTP_PASSWORD', 'A_REMPLACER');  // mot de passe de la BOÎTE MAIL (pas celui de cPanel)
 define('SMTP_SECURE', 'ssl');               // 'ssl' (port 465) ou 'tls' (port 587)
 
 define('FROM_EMAIL', 'contact@mafia-airsoft.com');
