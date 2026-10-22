@@ -35,6 +35,19 @@ foreach ($registrations as &$reg) {
 }
 unset($reg);
 
+// Réservations (commandes) du joueur
+$stmt = $pdo->prepare("
+    SELECT o.*, e.title AS event_title, e.event_date
+    FROM orders o
+    JOIN events e ON e.id = o.event_id
+    WHERE o.user_id = ? AND o.status IN ('paid', 'free', 'pending', 'refunded')
+    ORDER BY o.created_at DESC
+");
+$stmt->execute([$_SESSION['user_id']]);
+$orders = $stmt->fetchAll();
+
+$flashes = flash_get();
+
 // Séparer les inscriptions futures et passées
 $upcoming_registrations = [];
 $past_registrations = [];
@@ -67,12 +80,26 @@ foreach ($registrations as $reg) {
             <h1><?= icon('user') ?> Mon espace joueur</h1>
             <p class="welcome-text">Bienvenue, <strong><?= htmlspecialchars($user['pseudo']) ?></strong> !</p>
 
+            <?php foreach ($flashes as $flash): ?>
+                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
+            <?php endforeach; ?>
+
+            <?php if (!profile_is_complete($user)): ?>
+                <div class="alert alert-warning">
+                    Complète ton prénom et ton nom pour pouvoir réserver tes places.
+                    <a href="profile.php?complete=1">Compléter mon profil</a>
+                </div>
+            <?php endif; ?>
+
             <!-- Informations personnelles -->
             <section class="dashboard-section">
                 <h2><?= icon('edit') ?> Mes informations</h2>
                 <div class="info-grid">
                     <div class="info-item">
                         <strong>Pseudo:</strong> <?= htmlspecialchars($user['pseudo']) ?>
+                    </div>
+                    <div class="info-item">
+                        <strong>Nom:</strong> <?= htmlspecialchars(full_name($user['first_name'] ?? '', $user['last_name'] ?? '') ?: '-') ?>
                     </div>
                     <div class="info-item">
                         <strong>Email:</strong> <?= htmlspecialchars($user['email']) ?>
@@ -86,6 +113,7 @@ foreach ($registrations as $reg) {
                         <strong>Membre depuis:</strong> <?= date('d/m/Y', strtotime($user['created_at'])) ?>
                     </div>
                 </div>
+                <a href="profile.php" class="btn btn-secondary btn-sm" style="margin-top: var(--spacing-md);">Modifier mon profil / mot de passe</a>
             </section>
 
             <!-- Statistiques -->
@@ -144,6 +172,9 @@ foreach ($registrations as $reg) {
                                     <a href="../event.php?id=<?= $reg['id'] ?>" class="btn btn-primary btn-sm">
                                         Voir les détails
                                     </a>
+                                    <a href="../ticket.php?registration=<?= (int)$reg['registration_id'] ?>" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">
+                                        🎫 Mon billet
+                                    </a>
                                     <small class="registration-date">
                                         Inscrit le <?= date('d/m/Y', strtotime($reg['registered_at'])) ?>
                                     </small>
@@ -153,6 +184,44 @@ foreach ($registrations as $reg) {
                     </div>
                 <?php endif; ?>
             </section>
+
+            <!-- Réservations et paiements -->
+            <?php if (!empty($orders)): ?>
+                <section class="dashboard-section">
+                    <h2>🧾 Mes réservations</h2>
+                    <div class="admin-table-wrapper">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>N°</th>
+                                    <th>Partie</th>
+                                    <th>Places</th>
+                                    <th>Montant</th>
+                                    <th>Statut</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($orders as $order): ?>
+                                    <tr>
+                                        <td><?= (int)$order['id'] ?></td>
+                                        <td><?= e($order['event_title']) ?><br><small><?= date('d/m/Y', strtotime($order['event_date'])) ?></small></td>
+                                        <td><?= (int)$order['quantity'] ?></td>
+                                        <td><?= (int)$order['amount_cents'] > 0 ? e(format_price((int)$order['amount_cents'])) : 'Gratuit' ?></td>
+                                        <td><?= e(order_status_label($order['status'])) ?></td>
+                                        <td>
+                                            <a href="../order.php?id=<?= (int)$order['id'] ?>" class="btn-link">Billets / invités</a>
+                                            <?php if (in_array($order['status'], ['paid', 'refunded'], true)): ?>
+                                                · <a href="../receipt.php?order=<?= (int)$order['id'] ?>" class="btn-link" target="_blank" rel="noopener">Reçu</a>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            <?php endif; ?>
 
             <!-- Historique -->
             <?php if (!empty($past_registrations)): ?>

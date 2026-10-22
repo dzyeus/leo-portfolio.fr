@@ -7,6 +7,7 @@ $message = '';
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $title = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
     $scenario = trim($_POST['scenario'] ?? '');
@@ -16,20 +17,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $equipment = trim($_POST['equipment_required'] ?? '');
     $rules = trim($_POST['rules'] ?? '');
     $registration_open = isset($_POST['registration_open']) ? 1 : 0;
+    // Prix par place en euros (0 = gratuit)
+    $price_input = str_replace([',', '€', ' '], ['.', '', ''], trim($_POST['price'] ?? '0'));
+    $price_cents = is_numeric($price_input) ? (int)round((float)$price_input * 100) : -1;
 
     // Validation
     if (empty($title) || empty($event_date) || empty($event_time) || empty($location)) {
         $error = 'Veuillez remplir tous les champs obligatoires.';
+    } elseif ($price_cents < 0 || $price_cents > 100000) {
+        $error = 'Prix invalide (ex : 10 ou 12,50 ; 0 pour une partie gratuite).';
     } else {
         $full_datetime = $event_date . ' ' . $event_time;
         
         $stmt = $pdo->prepare("
-            INSERT INTO events (title, description, scenario, event_date, location, 
+            INSERT INTO events (title, description, scenario, event_date, location, price_cents,
                                equipment_required, rules, registration_open)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         
-        if ($stmt->execute([$title, $description, $scenario, $full_datetime, $location,
+        if ($stmt->execute([$title, $description, $scenario, $full_datetime, $location, $price_cents,
                            $equipment, $rules, $registration_open])) {
             $new_event_id = $pdo->lastInsertId();
             
@@ -77,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <form method="POST" action="create_event.php" class="admin-form">
+                <?= csrf_field() ?>
                 <div class="form-section">
                     <h3>Informations générales</h3>
                     
@@ -105,6 +112,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="text" id="location" name="location" required 
                                value="<?= htmlspecialchars($_POST['location'] ?? '') ?>" 
                                placeholder="Ex: Forêt de Fontainebleau">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="price">Prix par place (€) *</label>
+                        <input type="text" id="price" name="price" required inputmode="decimal"
+                               value="<?= htmlspecialchars($_POST['price'] ?? number_format(DEFAULT_EVENT_PRICE_CENTS / 100, 2, ',', '')) ?>">
+                        <small>Mettre 0 pour une partie gratuite (inscription sans paiement).</small>
                     </div>
 
                     <div class="form-group">

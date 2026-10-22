@@ -50,6 +50,7 @@ if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
                         <a href="<?= $base_path ?>logout.php" class="btn-logout">Déconnexion</a>
                     </li>
                 <?php else: ?>
+                    <li><a href="<?= $base_path ?>register.php" class="<?= $current_page === 'register.php' ? 'active' : '' ?>">Créer un compte</a></li>
                     <li><a href="<?= $base_path ?>login.php" class="btn btn-outline">Connexion</a></li>
                 <?php endif; ?>
             </ul>

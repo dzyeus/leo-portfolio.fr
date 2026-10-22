@@ -2,126 +2,184 @@
 require_once 'config/database.php';
 require_once 'config/session.php';
 require_once 'config/team_helpers.php';
-require_once 'qr-code/ticket_integration.php';
 
-$event_id = $_GET['id'] ?? 0;
-$message = '';
+$event_id = (int)($_GET['id'] ?? 0);
 $error = '';
-$ticket_warning = '';
 
 // Récupérer les détails de la partie avec les équipes
 $event = getEventWithTeams($pdo, $event_id);
 
-if (!$event) {
+if (!$event || (!$event['is_active'] && !isAdmin())) {
     header('Location: events.php');
     exit;
 }
 
-// Vérifier si l'utilisateur est déjà inscrit
+$is_free = event_is_free($event);
+$registration_open = event_registration_is_open($event);
+$event_started = event_has_started($event);
+
+// Place du joueur connecté pour cette partie (et la commande associée)
 $user_registration = null;
+$user_orders = [];
 if (isLoggedIn()) {
-    $stmt = $pdo->prepare("SELECT * FROM registrations WHERE user_id = ? AND event_id = ?");
+    $stmt = $pdo->prepare("
+        SELECT r.*, o.status AS order_status, o.quantity AS order_quantity
+        FROM registrations r
+        LEFT JOIN orders o ON o.id = r.order_id
+        WHERE r.user_id = ? AND r.event_id = ?
+    ");
     $stmt->execute([$_SESSION['user_id'], $event_id]);
-    $user_registration = $stmt->fetch();
+    $user_registration = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    $stmt = $pdo->prepare("
+        SELECT * FROM orders
+        WHERE user_id = ? AND event_id = ? AND status IN ('paid', 'free', 'pending')
+        ORDER BY created_at DESC
+    ");
+    $stmt->execute([$_SESSION['user_id'], $event_id]);
+    $user_orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-// Gérer l'inscription
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn()) {
+// Actions : réserver / se désinscrire
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isLoggedIn()) {
+        redirect('login.php?return=' . urlencode('event.php?id=' . $event_id));
+    }
+    require_csrf();
     $action = $_POST['action'] ?? '';
-    $team = $_POST['team'] ?? '';
-    
-    if ($action === 'register' && !empty($team)) {
-        // Vérifier que l'équipe existe
-        $team_info = getEventTeam($pdo, $event_id, $team);
-        
-        if (!$team_info) {
-            $error = 'Cette équipe n\'existe pas.';
+
+    if ($action === 'book') {
+        $user = current_user($pdo);
+        if (!profile_is_complete($user)) {
+            redirect('player/profile.php?complete=1&return=' . urlencode('event.php?id=' . $event_id));
         }
-        // Vérifier que les inscriptions sont ouvertes
-        elseif (!$event['registration_open']) {
-            $error = 'Les inscriptions sont fermées pour cette partie.';
-        }
-        // Vérifier si déjà inscrit
-        elseif ($user_registration) {
-            $error = 'Vous êtes déjà inscrit à cette partie.';
-        }
-        // Vérifier les places disponibles
-        elseif ($team_info['current_players'] >= $team_info['max_players']) {
-            $error = 'Cette équipe est complète.';
-        } else {
-            // Inscrire le joueur
-            $stmt = $pdo->prepare("INSERT INTO registrations (user_id, event_id, team) VALUES (?, ?, ?)");
-            if ($stmt->execute([$_SESSION['user_id'], $event_id, $team])) {
-                // 🎫 GÉNÉRATION AUTOMATIQUE DU BILLET
-                $ticketResult = processTicketAfterRegistration($pdo, $event_id, $_SESSION['user_id']);
-                
-                if ($ticketResult['success']) {
-                    if (isset($ticketResult['warning'])) {
-                        $ticket_warning = $ticketResult['warning'];
-                    }
-                    $message = 'Inscription réussie ! Vous avez rejoint ' . htmlspecialchars($team_info['team_name']) . '. 🎫 Votre billet a été envoyé par email !';
-                } else {
-                    $message = 'Inscription réussie ! Vous avez rejoint ' . htmlspecialchars($team_info['team_name']) . '.';
-                    $ticket_warning = 'Note: ' . $ticketResult['error'];
+        try {
+            $order = order_create($pdo, $user, $event, (string)($_POST['team'] ?? ''), (int)($_POST['quantity'] ?? 1));
+
+            if ($order['status'] === 'free') {
+                order_send_confirmation($pdo, (int)$order['id']);
+                if ((int)$order['quantity'] > 1) {
+                    flash_set('success', 'Places réservées ! Renseigne maintenant tes invités pour générer leurs billets.');
+                    redirect('order.php?id=' . $order['id']);
                 }
-                
-                // Recharger les données
-                header('Location: event.php?id=' . $event_id . '&success=1' . ($ticket_warning ? '&ticket_warning=1' : ''));
-                exit;
-            } else {
-                $error = 'Erreur lors de l\'inscription.';
+                flash_set('success', 'Inscription réussie ! 🎫 Ton billet t\'a été envoyé par email.');
+                redirect('event.php?id=' . $event_id);
             }
+
+            // Partie payante : direction la page de paiement Stripe
+            header('Location: ' . order_start_checkout($pdo, $order, $event), true, 303);
+            exit;
+        } catch (OrderException $e) {
+            $error = $e->getMessage();
+        } catch (Throwable $e) {
+            error_log('Réservation partie ' . $event_id . ' : ' . $e->getMessage());
+            $error = 'Une erreur est survenue, réessaie dans un instant.';
         }
-    } elseif ($action === 'unregister') {
-        if ($user_registration) {
-            // 🎫 SUPPRIMER LE BILLET AVANT DE DÉSINSCRIRE
-            deleteTicketAfterUnregistration($pdo, $event_id, $_SESSION['user_id']);
-            
-            $stmt = $pdo->prepare("DELETE FROM registrations WHERE id = ?");
-            if ($stmt->execute([$user_registration['id']])) {
-                $message = 'Vous avez été désinscrit de cette partie.';
-                header('Location: event.php?id=' . $event_id . '&unregistered=1');
-                exit;
+    } elseif ($action === 'unregister' && $user_registration) {
+        if ($event_started) {
+            $error = 'La partie a déjà commencé.';
+        } elseif (!empty($user_registration['order_status']) && $user_registration['order_status'] !== 'free') {
+            $error = 'Ta place a été payée : contacte un organisateur pour annuler et être remboursé.';
+        } else {
+            $pdo->prepare("DELETE FROM registrations WHERE id = ?")->execute([$user_registration['id']]);
+            if ($user_registration['order_id'] && (int)$user_registration['order_quantity'] === 1) {
+                $pdo->prepare("UPDATE orders SET status = 'cancelled' WHERE id = ? AND status = 'free'")
+                    ->execute([$user_registration['order_id']]);
             }
+            flash_set('success', 'Désinscription effectuée.');
+            redirect('event.php?id=' . $event_id);
         }
     }
 }
 
-// Messages de succès depuis les redirections
-if (isset($_GET['success'])) {
-    $message = 'Inscription réussie ! 🎫 Votre billet a été envoyé par email.';
-    if (isset($_GET['ticket_warning'])) {
-        $ticket_warning = 'Le billet a été créé mais l\'email n\'a peut-être pas été envoyé. Contactez un administrateur si besoin.';
-    }
+// Retour de la page de paiement abandonnée
+if (isset($_GET['payment']) && $_GET['payment'] === 'cancelled') {
+    flash_set('info', 'Paiement annulé : aucune place n\'a été réservée.');
 }
-if (isset($_GET['unregistered'])) {
-    $message = 'Désinscription effectuée.';
-}
+$flashes = flash_get();
 
-// Récupérer la liste des inscrits (visible pour tous)
+// Liste des inscrits (visible pour tous) : joueurs et invités
 $stmt = $pdo->prepare("
-    SELECT r.team, u.pseudo, u.profile_picture
+    SELECT r.team, COALESCE(r.pseudo, u.pseudo) AS pseudo, u.profile_picture
     FROM registrations r
-    JOIN users u ON r.user_id = u.id
+    LEFT JOIN users u ON r.user_id = u.id
     WHERE r.event_id = ?
     ORDER BY r.team, r.registered_at
 ");
 $stmt->execute([$event_id]);
 $registrations = $stmt->fetchAll();
 
-$teams = [
-    'BLUE' => [],
-    'RED' => [],
-    'NEUTRAL' => [],
-    'ORGA' => []
-];
-
+$teams = [];
+foreach ($event['teams'] as $team_info) {
+    $teams[$team_info['team_key']] = [];
+}
 foreach ($registrations as $reg) {
     $teams[$reg['team']][] = [
-        'pseudo' => $reg['pseudo'],
+        'pseudo' => $reg['pseudo'] ?: 'Invité',
         'picture' => $reg['profile_picture']
     ];
 }
+
+$max_places = (int)MAX_PLACES_PER_ORDER;
+$price_label = $is_free ? 'Gratuit' : format_price((int)$event['price_cents']) . ' par place';
+
+/** Bloc d'inscription (affiché deux fois : version mobile et version ordinateur). */
+function render_registration_box(array $event, ?array $user_registration, bool $registration_open, bool $is_free, int $max_places, string $price_label, string $suffix): void
+{
+    if (!isLoggedIn()) { ?>
+        <div class="registration-box">
+            <h3>Rejoindre la partie</h3>
+            <p><strong><?= e($price_label) ?></strong></p>
+            <p>Connecte-toi ou crée un compte pour réserver ta place.</p>
+            <a href="login.php?return=<?= urlencode('event.php?id=' . $event['id']) ?>" class="btn btn-primary btn-block">Se connecter</a>
+            <p style="text-align:center;margin-top:var(--spacing-sm);">
+                <a href="register.php?return=<?= urlencode('event.php?id=' . $event['id']) ?>">Créer un compte</a>
+            </p>
+        </div>
+    <?php return; }
+
+    if (!$registration_open) { ?>
+        <div class="alert alert-warning">Inscriptions fermées</div>
+    <?php return; } ?>
+
+    <div class="registration-box">
+        <h3><?= $user_registration ? 'Ajouter des invités' : 'Rejoindre la partie' ?></h3>
+        <p><strong><?= e($price_label) ?></strong></p>
+        <form method="POST" class="registration-form" data-price="<?= $is_free ? 0 : (int)$event['price_cents'] ?>">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="book">
+
+            <div class="form-group">
+                <label for="quantity<?= $suffix ?>">
+                    <?= $user_registration ? 'Nombre d\'invités' : 'Nombre de places (toi + tes invités)' ?>
+                </label>
+                <select id="quantity<?= $suffix ?>" name="quantity" class="quantity-select">
+                    <?php for ($q = 1; $q <= $max_places; $q++): ?>
+                        <option value="<?= $q ?>"><?= $q ?><?= $is_free ? '' : ' – ' . e(format_price($q * (int)$event['price_cents'])) ?></option>
+                    <?php endfor; ?>
+                </select>
+                <?php if (!$is_free): ?>
+                    <small>Paiement sécurisé par carte (Stripe). Tu renseigneras tes invités juste après.</small>
+                <?php endif; ?>
+            </div>
+
+            <p>Choisissez votre équipe :</p>
+            <?php foreach ($event['teams'] as $team): ?>
+                <?php $is_full = $team['current_players'] >= $team['max_players']; ?>
+                <button type="submit" name="team" value="<?= e($team['team_key']) ?>"
+                        class="btn-team"
+                        style="border-left: 4px solid <?= e($team['team_color']) ?>"
+                        <?= $is_full ? 'disabled' : '' ?>>
+                    <?= e($team['team_name']) ?>
+                    <span class="team-count"><?= $team['current_players'] ?>/<?= $team['max_players'] ?></span>
+                    <?php if ($is_full): ?>
+                        <span class="team-full">COMPLET</span>
+                    <?php endif; ?>
+                </button>
+            <?php endforeach; ?>
+        </form>
+    </div>
+<?php }
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -151,31 +209,44 @@ foreach ($registrations as $reg) {
                     <span class="meta-item">
                         <strong>📍 Lieu:</strong> <?= htmlspecialchars($event['location']) ?>
                     </span>
+                    <span class="meta-item">
+                        <strong>💶 Prix:</strong> <?= e($price_label) ?>
+                    </span>
                 </div>
             </div>
 
-            <?php if ($message): ?>
-                <div class="alert alert-success"><?= $message ?></div>
-            <?php endif; ?>
+            <?php foreach ($flashes as $flash): ?>
+                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
+            <?php endforeach; ?>
             
             <?php if ($error): ?>
-                <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
-            <?php endif; ?>
-            
-            <?php if ($ticket_warning): ?>
-                <div class="alert alert-warning"><?= htmlspecialchars($ticket_warning) ?></div>
+                <div class="alert alert-error"><?= e($error) ?></div>
             <?php endif; ?>
 
             <!-- Statut d'inscription de l'utilisateur -->
             <?php if ($user_registration): ?>
                 <div class="alert alert-info">
-                    <?= icon('check') ?> Vous êtes inscrit au camp <strong><?= $user_registration['team'] ?></strong>
-                    <form method="POST" style="display: inline-block; margin-left: 15px;">
-                        <input type="hidden" name="action" value="unregister">
-                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Êtes-vous sûr de vouloir vous désinscrire ?')">
-                            Se désinscrire
-                        </button>
-                    </form>
+                    <?= icon('check') ?> Vous êtes inscrit au camp <strong><?= e($user_registration['team']) ?></strong>
+                    <?php if (!$event_started && (empty($user_registration['order_status']) || $user_registration['order_status'] === 'free')): ?>
+                        <form method="POST" style="display: inline-block; margin-left: 15px;">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="action" value="unregister">
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Êtes-vous sûr de vouloir vous désinscrire ?')">
+                                Se désinscrire
+                            </button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($user_orders): ?>
+                <div class="alert alert-info">
+                    🎫 Mes réservations pour cette partie :
+                    <?php foreach ($user_orders as $o): ?>
+                        <a href="order.php?id=<?= (int)$o['id'] ?>" style="margin-left: 10px;">
+                            n° <?= (int)$o['id'] ?> (<?= (int)$o['quantity'] ?> place<?= $o['quantity'] > 1 ? 's' : '' ?>, <?= e(order_status_label($o['status'])) ?>)
+                        </a>
+                    <?php endforeach; ?>
                 </div>
             <?php endif; ?>
 
@@ -211,39 +282,7 @@ foreach ($registrations as $reg) {
                     <!-- Inscription et équipes en mobile -->
                     <div class="event-detail-sidebar-mobile">
                         <!-- Inscription -->
-                        <?php if (isLoggedIn() && !$user_registration && $event['registration_open']): ?>
-                            <div class="registration-box">
-                                <h3>Rejoindre la partie</h3>
-                                <p>Choisissez votre équipe :</p>
-                                <form method="POST" class="registration-form">
-                                    <input type="hidden" name="action" value="register">
-                                    
-                                    <?php foreach ($event['teams'] as $team): ?>
-                                        <?php $is_full = $team['current_players'] >= $team['max_players']; ?>
-                                        <button type="submit" name="team" value="<?= htmlspecialchars($team['team_key']) ?>" 
-                                                class="btn-team" 
-                                                style="border-left: 4px solid <?= htmlspecialchars($team['team_color']) ?>"
-                                                <?= $is_full ? 'disabled' : '' ?>>
-                                            <?= htmlspecialchars($team['team_name']) ?>
-                                            <span class="team-count"><?= $team['current_players'] ?>/<?= $team['max_players'] ?></span>
-                                            <?php if ($is_full): ?>
-                                                <span class="team-full">COMPLET</span>
-                                            <?php endif; ?>
-                                        </button>
-                                    <?php endforeach; ?>
-                                </form>
-                            </div>
-                        <?php elseif (!isLoggedIn()): ?>
-                            <div class="registration-box">
-                                <h3>Rejoindre la partie</h3>
-                                <p>Connectez-vous pour vous inscrire à cette partie.</p>
-                                <a href="login.php" class="btn btn-primary btn-block">Se connecter</a>
-                            </div>
-                        <?php elseif (!$event['registration_open']): ?>
-                            <div class="alert alert-warning">
-                                Inscriptions fermées
-                            </div>
-                        <?php endif; ?>
+                        <?php render_registration_box($event, $user_registration, $registration_open, $is_free, $max_places, $price_label, '_m'); ?>
 
                         <!-- Liste des inscrits -->
                         <div class="players-list">
@@ -281,39 +320,7 @@ foreach ($registrations as $reg) {
                 <!-- Colonne droite: Inscription et équipes (Desktop seulement) -->
                 <div class="event-detail-sidebar">
                     <!-- Inscription -->
-                    <?php if (isLoggedIn() && !$user_registration && $event['registration_open']): ?>
-                        <div class="registration-box">
-                            <h3>Rejoindre la partie</h3>
-                            <p>Choisissez votre équipe :</p>
-                            <form method="POST" class="registration-form">
-                                <input type="hidden" name="action" value="register">
-                                
-                                <?php foreach ($event['teams'] as $team): ?>
-                                    <?php $is_full = $team['current_players'] >= $team['max_players']; ?>
-                                    <button type="submit" name="team" value="<?= htmlspecialchars($team['team_key']) ?>" 
-                                            class="btn-team" 
-                                            style="border-left: 4px solid <?= htmlspecialchars($team['team_color']) ?>"
-                                            <?= $is_full ? 'disabled' : '' ?>>
-                                        <?= htmlspecialchars($team['team_name']) ?>
-                                        <span class="team-count"><?= $team['current_players'] ?>/<?= $team['max_players'] ?></span>
-                                        <?php if ($is_full): ?>
-                                            <span class="team-full">COMPLET</span>
-                                        <?php endif; ?>
-                                    </button>
-                                <?php endforeach; ?>
-                            </form>
-                        </div>
-                    <?php elseif (!isLoggedIn()): ?>
-                        <div class="registration-box">
-                            <h3>Rejoindre la partie</h3>
-                            <p>Connectez-vous pour vous inscrire à cette partie.</p>
-                            <a href="login.php" class="btn btn-primary btn-block">Se connecter</a>
-                        </div>
-                    <?php elseif (!$event['registration_open']): ?>
-                        <div class="alert alert-warning">
-                            Inscriptions fermées
-                        </div>
-                    <?php endif; ?>
+                    <?php render_registration_box($event, $user_registration, $registration_open, $is_free, $max_places, $price_label, '_d'); ?>
 
                     <!-- Liste des inscrits -->
                     <div class="players-list">

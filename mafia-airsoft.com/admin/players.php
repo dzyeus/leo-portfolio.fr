@@ -8,18 +8,25 @@ $error = '';
 
 // Gestion de l'ajout d'un nouveau joueur
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    require_csrf();
     $action = $_POST['action'];
     
     if ($action === 'add_player') {
         $pseudo = trim($_POST['pseudo'] ?? '');
+        $first_name = trim($_POST['first_name'] ?? '');
+        $last_name = trim($_POST['last_name'] ?? '');
         $email = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
         $phone = trim($_POST['phone'] ?? '');
         
-        if (empty($pseudo) || empty($email) || empty($password)) {
-            $error = 'Pseudo, email et mot de passe sont obligatoires.';
+        if (empty($pseudo) || empty($first_name) || empty($last_name) || empty($email) || empty($password)) {
+            $error = 'Pseudo, prénom, nom, email et mot de passe sont obligatoires.';
+        } elseif ($problem = pseudo_problem($pseudo)) {
+            $error = $problem;
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Email invalide.';
+        } elseif ($problem = password_problem($password)) {
+            $error = $problem;
         } else {
             // Vérifier si l'email ou pseudo existe déjà
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? OR pseudo = ?");
@@ -35,8 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $filename = $_FILES['profile_picture']['name'];
                     $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
                     
-                    if (in_array($ext, $allowed)) {
-                        $new_filename = uniqid() . '.' . $ext;
+                    if (in_array($ext, $allowed) && @getimagesize($_FILES['profile_picture']['tmp_name']) !== false) {
+                        $new_filename = bin2hex(random_bytes(12)) . '.' . $ext;
                         $upload_path = '../uploads/profiles/' . $new_filename;
                         
                         if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
@@ -46,9 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
                 
                 $password_hash = password_hash($password, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("INSERT INTO users (pseudo, email, password_hash, phone, profile_picture) VALUES (?, ?, ?, ?, ?)");
+                // Compte créé par un admin : email considéré comme vérifié
+                $stmt = $pdo->prepare("INSERT INTO users (pseudo, first_name, last_name, email, email_verified_at, password_hash, phone, profile_picture) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?)");
                 
-                if ($stmt->execute([$pseudo, $email, $password_hash, $phone, $profile_picture])) {
+                if ($stmt->execute([$pseudo, $first_name, $last_name, $email, $password_hash, $phone ?: null, $profile_picture])) {
                     $message = 'Joueur ajouté avec succès !';
                 } else {
                     $error = 'Erreur lors de l\'ajout du joueur.';
@@ -63,16 +71,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $filename = $_FILES['profile_picture']['name'];
             $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
             
-            if (in_array($ext, $allowed)) {
+            if (in_array($ext, $allowed) && @getimagesize($_FILES['profile_picture']['tmp_name']) !== false) {
                 // Supprimer l'ancienne photo
                 $stmt = $pdo->prepare("SELECT profile_picture FROM users WHERE id = ?");
                 $stmt->execute([$user_id]);
                 $old_picture = $stmt->fetchColumn();
-                if ($old_picture && file_exists('../' . $old_picture)) {
+                if ($old_picture && strpos($old_picture, 'uploads/profiles/') === 0 && file_exists('../' . $old_picture)) {
                     unlink('../' . $old_picture);
                 }
                 
-                $new_filename = uniqid() . '.' . $ext;
+                $new_filename = bin2hex(random_bytes(12)) . '.' . $ext;
                 $upload_path = '../uploads/profiles/' . $new_filename;
                 
                 if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
@@ -93,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $stmt = $pdo->prepare("SELECT profile_picture FROM users WHERE id = ?");
         $stmt->execute([$user_id]);
         $picture = $stmt->fetchColumn();
-        if ($picture && file_exists('../' . $picture)) {
+        if ($picture && strpos($picture, 'uploads/profiles/') === 0 && file_exists('../' . $picture)) {
             unlink('../' . $picture);
         }
         
@@ -144,6 +152,7 @@ $players = $stmt->fetchAll();
             <section class="dashboard-section">
                 <h2><?= icon('plus') ?> Ajouter un nouveau joueur</h2>
                 <form method="POST" enctype="multipart/form-data" class="admin-form">
+                    <?= csrf_field() ?>
                     <input type="hidden" name="action" value="add_player">
                     
                     <div class="form-row">
@@ -160,9 +169,21 @@ $players = $stmt->fetchAll();
 
                     <div class="form-row">
                         <div class="form-group">
+                            <label for="first_name">Prénom *</label>
+                            <input type="text" id="first_name" name="first_name" required maxlength="100">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="last_name">Nom *</label>
+                            <input type="text" id="last_name" name="last_name" required maxlength="100">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
                             <label for="password">Mot de passe *</label>
-                            <input type="password" id="password" name="password" required minlength="6">
-                            <small>Minimum 6 caractères</small>
+                            <input type="password" id="password" name="password" required minlength="8">
+                            <small>Minimum 8 caractères (le joueur pourra le changer, ou utiliser « mot de passe oublié »)</small>
                         </div>
                         
                         <div class="form-group">
@@ -200,6 +221,12 @@ $players = $stmt->fetchAll();
                                 
                                 <div class="player-info">
                                     <h3><?= htmlspecialchars($player['pseudo']) ?></h3>
+                                    <?php if (!empty($player['first_name']) || !empty($player['last_name'])): ?>
+                                        <p class="player-name"><?= htmlspecialchars(full_name($player['first_name'], $player['last_name'])) ?></p>
+                                    <?php endif; ?>
+                                    <?php if (empty($player['email_verified_at'])): ?>
+                                        <p class="player-activity">⏳ Email non confirmé</p>
+                                    <?php endif; ?>
                                     <p class="player-email">📧 <?= htmlspecialchars($player['email']) ?></p>
                                     <?php if ($player['phone']): ?>
                                         <p class="player-phone">📱 <?= htmlspecialchars($player['phone']) ?></p>
@@ -219,6 +246,7 @@ $players = $stmt->fetchAll();
                                 
                                 <div class="player-actions">
                                     <form method="POST" enctype="multipart/form-data" style="display:inline;">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="update_picture">
                                         <input type="hidden" name="user_id" value="<?= $player['id'] ?>">
                                         <label class="btn btn-outline btn-sm" style="cursor: pointer;">
@@ -228,6 +256,7 @@ $players = $stmt->fetchAll();
                                     </form>
                                     
                                     <form method="POST" style="display:inline;" onsubmit="return confirm('Supprimer ce joueur ?');">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="action" value="delete_player">
                                         <input type="hidden" name="user_id" value="<?= $player['id'] ?>">
                                         <button type="submit" class="btn btn-danger btn-sm">🗑️ Supprimer</button>

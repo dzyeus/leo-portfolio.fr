@@ -6,8 +6,18 @@ document.addEventListener('DOMContentLoaded', function() {
         button.addEventListener('click', function(e) {
             if (!this.disabled) {
                 const teamName = this.textContent.trim().split('\n')[0];
-                const confirmed = confirm(`Voulez-vous vraiment rejoindre le ${teamName} ?`);
-                if (!confirmed) {
+                const form = this.closest('form');
+                const select = form ? form.querySelector('.quantity-select') : null;
+                const quantity = select ? parseInt(select.value, 10) : 1;
+                const price = form ? parseInt(form.dataset.price || '0', 10) : 0;
+                let message = quantity > 1
+                    ? `Réserver ${quantity} places dans ${teamName} ?`
+                    : `Voulez-vous vraiment rejoindre ${teamName} ?`;
+                if (price > 0) {
+                    const total = (price * quantity / 100).toFixed(2).replace('.', ',');
+                    message += `\n\nTotal : ${total} € – tu vas être redirigé vers la page de paiement sécurisée.`;
+                }
+                if (!confirm(message)) {
                     e.preventDefault();
                 }
             }

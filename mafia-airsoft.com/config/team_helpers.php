@@ -4,7 +4,8 @@
  */
 
 /**
- * Récupère toutes les équipes d'un événement avec le nombre de joueurs inscrits
+ * Récupère toutes les équipes d'un événement avec le nombre de places prises
+ * (joueurs inscrits + places bloquées par un paiement en cours)
  * @param PDO $pdo Instance PDO
  * @param int $event_id ID de l'événement
  * @return array Tableau des équipes
@@ -13,7 +14,10 @@ function getEventTeams($pdo, $event_id) {
     $stmt = $pdo->prepare("
         SELECT et.*,
                (SELECT COUNT(*) FROM registrations 
-                WHERE event_id = et.event_id AND team = et.team_key) as current_players
+                WHERE event_id = et.event_id AND team = et.team_key)
+             + (SELECT COALESCE(SUM(o.quantity), 0) FROM orders o
+                WHERE o.event_id = et.event_id AND o.team_key = et.team_key
+                  AND o.status = 'pending' AND o.expires_at > NOW()) as current_players
         FROM event_teams et
         WHERE et.event_id = ?
         ORDER BY et.display_order ASC
@@ -33,7 +37,10 @@ function getEventTeam($pdo, $event_id, $team_key) {
     $stmt = $pdo->prepare("
         SELECT et.*,
                (SELECT COUNT(*) FROM registrations 
-                WHERE event_id = et.event_id AND team = et.team_key) as current_players
+                WHERE event_id = et.event_id AND team = et.team_key)
+             + (SELECT COALESCE(SUM(o.quantity), 0) FROM orders o
+                WHERE o.event_id = et.event_id AND o.team_key = et.team_key
+                  AND o.status = 'pending' AND o.expires_at > NOW()) as current_players
         FROM event_teams et
         WHERE et.event_id = ? AND et.team_key = ?
     ");

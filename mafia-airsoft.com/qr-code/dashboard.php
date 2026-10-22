@@ -9,15 +9,15 @@ require_once __DIR__ . '/../includes/icons.php';
 requireAdmin();
 
 // Récupérer l'événement sélectionné
-$selectedEventId = $_GET['event'] ?? null;
+$selectedEventId = isset($_GET['event']) ? (int)$_GET['event'] : null;
 
 // Récupérer tous les événements
 $stmt = $pdo->query("
     SELECT e.*, 
-           COUNT(et.id) as total_tickets,
-           SUM(CASE WHEN et.is_scanned = 1 THEN 1 ELSE 0 END) as scanned_tickets
+           COUNT(t.id) as total_tickets,
+           SUM(CASE WHEN t.scanned_at IS NOT NULL THEN 1 ELSE 0 END) as scanned_tickets
     FROM events e
-    LEFT JOIN event_tickets et ON e.id = et.event_id
+    LEFT JOIN tickets t ON e.id = t.event_id
     GROUP BY e.id
     ORDER BY e.event_date DESC
 ");
@@ -34,18 +34,24 @@ $stats = [
 
 if ($selectedEventId) {
     $stmt = $pdo->prepare("
-        SELECT et.*,
+        SELECT t.id, t.code AS ticket_code, (t.scanned_at IS NOT NULL) AS is_scanned,
+               t.scanned_at, t.created_at,
                e.title as event_title,
                e.event_date,
-               u.pseudo as user_name,
-               u.email as user_email,
+               CONCAT_WS(' ',
+                   NULLIF(TRIM(CONCAT_WS(' ', COALESCE(r.first_name, u.first_name), COALESCE(r.last_name, u.last_name))), ''),
+                   CONCAT('(', COALESCE(r.pseudo, u.pseudo, 'invité à compléter'), ')')
+               ) as user_name,
+               COALESCE(u.email, CONCAT(o.buyer_email, ' (acheteur)')) as user_email,
                scanner.pseudo as scanned_by_name
-        FROM event_tickets et
-        JOIN events e ON et.event_id = e.id
-        JOIN users u ON et.user_id = u.id
-        LEFT JOIN users scanner ON et.scanned_by = scanner.id
-        WHERE et.event_id = ?
-        ORDER BY et.is_scanned ASC, et.created_at DESC
+        FROM tickets t
+        JOIN registrations r ON r.id = t.registration_id
+        JOIN events e ON t.event_id = e.id
+        LEFT JOIN users u ON r.user_id = u.id
+        LEFT JOIN orders o ON r.order_id = o.id
+        LEFT JOIN users scanner ON t.scanned_by = scanner.id
+        WHERE t.event_id = ?
+        ORDER BY is_scanned ASC, t.created_at DESC
     ");
     $stmt->execute([$selectedEventId]);
     $tickets = $stmt->fetchAll();

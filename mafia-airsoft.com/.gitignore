@@ -4,6 +4,7 @@ composer.lock
 
 # Fichiers de configuration sensibles
 config/database.php
+config/app.php
 qr-code/email_config.php
 
 # Fichiers uploadés sensibles
@@ -15,7 +16,9 @@ uploads/blog/*
 
 # Conserver les dossiers mais pas les fichiers
 !uploads/tickets/.gitkeep
+!uploads/tickets/.htaccess
 !uploads/qrcodes/.gitkeep
+!uploads/qrcodes/.htaccess
 !uploads/profiles/.gitkeep
 !uploads/gallery/.gitkeep
 !uploads/blog/.gitkeep

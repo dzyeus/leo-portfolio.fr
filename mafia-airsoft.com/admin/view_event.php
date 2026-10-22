@@ -4,7 +4,7 @@ require_once '../config/session.php';
 require_once '../config/team_helpers.php';
 requireAdmin();
 
-$event_id = $_GET['id'] ?? 0;
+$event_id = (int)($_GET['id'] ?? 0);
 
 // Récupérer les détails de la partie avec les équipes
 $event = getEventWithTeams($pdo, $event_id);
@@ -14,11 +14,29 @@ if (!$event) {
     exit;
 }
 
-// Récupérer tous les inscrits avec leurs informations
+// Gérer la suppression d'une inscription (place) : son billet est supprimé avec
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_registration'])) {
+    require_csrf();
+    $reg_id = (int)($_POST['registration_id'] ?? 0);
+    $stmt = $pdo->prepare("DELETE FROM registrations WHERE id = ? AND event_id = ?");
+    $stmt->execute([$reg_id, $event_id]);
+    header('Location: view_event.php?id=' . $event_id . '&deleted=1');
+    exit;
+}
+
+// Récupérer tous les inscrits (joueurs et invités) avec leur billet et leur paiement
 $stmt = $pdo->prepare("
-    SELECT r.*, u.pseudo, u.email, u.phone
+    SELECT r.*,
+           COALESCE(r.pseudo, u.pseudo) AS pseudo,
+           TRIM(CONCAT_WS(' ', COALESCE(r.first_name, u.first_name), COALESCE(r.last_name, u.last_name))) AS full_name,
+           COALESCE(u.email, o.buyer_email) AS email,
+           u.phone,
+           o.id AS order_id, o.status AS order_status, o.buyer_name,
+           t.scanned_at
     FROM registrations r
-    JOIN users u ON r.user_id = u.id
+    LEFT JOIN users u ON r.user_id = u.id
+    LEFT JOIN orders o ON r.order_id = o.id
+    LEFT JOIN tickets t ON t.registration_id = r.id
     WHERE r.event_id = ?
     ORDER BY r.team, r.registered_at
 ");
@@ -37,14 +55,11 @@ foreach ($registrations as $reg) {
     }
 }
 
-// Gérer la suppression d'une inscription
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_registration'])) {
-    $reg_id = $_POST['registration_id'] ?? 0;
-    $stmt = $pdo->prepare("DELETE FROM registrations WHERE id = ?");
-    $stmt->execute([$reg_id]);
-    header('Location: view_event.php?id=' . $event_id . '&deleted=1');
-    exit;
-}
+// Recettes de la partie
+$stmt = $pdo->prepare("SELECT COALESCE(SUM(amount_cents), 0) FROM orders WHERE event_id = ? AND status = 'paid'");
+$stmt->execute([$event_id]);
+$total_paid_cents = (int)$stmt->fetchColumn();
+$present_count = count(array_filter($registrations, fn($r) => !empty($r['scanned_at'])));
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -88,6 +103,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_registration']
                     </div>
                     <div class="info-item">
                         <strong>Total inscrits:</strong> <?= count($registrations) ?>
+                        (<?= $present_count ?> présent<?= $present_count > 1 ? 's' : '' ?>)
+                    </div>
+                    <div class="info-item">
+                        <strong>Prix:</strong> <?= event_is_free($event) ? 'Gratuit' : e(format_price((int)$event['price_cents'])) . ' / place' ?>
+                        · <strong>Encaissé:</strong> <?= e(format_price($total_paid_cents)) ?>
                     </div>
                 </div>
 
@@ -143,8 +163,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_registration']
                                     <thead>
                                         <tr>
                                             <th>Pseudo</th>
+                                            <th>Nom</th>
                                             <th>Email</th>
                                             <th>Téléphone</th>
+                                            <th>Paiement</th>
+                                            <th>Présent</th>
                                             <th>Inscrit le</th>
                                             <th>Actions</th>
                                         </tr>
@@ -152,15 +175,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_registration']
                                     <tbody>
                                         <?php foreach ($teams[$team_key] as $reg): ?>
                                             <tr>
-                                                <td><strong><?= htmlspecialchars($reg['pseudo']) ?></strong></td>
-                                                <td><?= htmlspecialchars($reg['email']) ?></td>
+                                                <td><strong><?= htmlspecialchars($reg['pseudo'] ?: 'Invité') ?></strong></td>
+                                                <td>
+                                                    <?= htmlspecialchars($reg['full_name'] ?: 'À compléter') ?>
+                                                    <?php if (!$reg['user_id']): ?>
+                                                        <br><small>invité de <?= htmlspecialchars($reg['buyer_name'] ?? '?') ?></small>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?= htmlspecialchars($reg['email'] ?? '-') ?></td>
                                                 <td><?= htmlspecialchars($reg['phone'] ?: '-') ?></td>
+                                                <td>
+                                                    <?php if ($reg['order_id']): ?>
+                                                        <a href="../order.php?id=<?= (int)$reg['order_id'] ?>">n° <?= (int)$reg['order_id'] ?></a>
+                                                        <small>(<?= e(order_status_label($reg['order_status'])) ?>)</small>
+                                                    <?php else: ?>
+                                                        -
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td><?= $reg['scanned_at'] ? '✅ ' . date('H:i', strtotime($reg['scanned_at'])) : '-' ?></td>
                                                 <td><?= date('d/m/Y H:i', strtotime($reg['registered_at'])) ?></td>
                                                 <td>
                                                     <form method="POST" style="display: inline;">
+                                                        <?= csrf_field() ?>
                                                         <input type="hidden" name="registration_id" value="<?= $reg['id'] ?>">
                                                         <button type="submit" name="delete_registration" class="btn-icon-danger" 
-                                                                onclick="return confirm('Supprimer cette inscription ?')" title="Supprimer">
+                                                                onclick="return confirm('<?= $reg['order_status'] === 'paid' ? 'Place payée : pense à rembourser dans Stripe (le remboursement total supprime aussi les places automatiquement). ' : '' ?>Supprimer cette inscription et son billet ?')" title="Supprimer">
                                                             <?= icon('trash') ?>
                                                         </button>
                                                     </form>

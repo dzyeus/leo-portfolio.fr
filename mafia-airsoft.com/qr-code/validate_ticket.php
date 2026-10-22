@@ -1,143 +1,100 @@
 <?php
 /**
- * API de validation des billets scannés
+ * API de validation des billets scannés à l'entrée (admins uniquement).
+ * Appel en POST depuis scan.php, avec le jeton CSRF dans l'en-tête X-CSRF-Token.
  */
-
-header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/session.php';
 
-// Vérifier que c'est bien un admin qui scanne
-if (!isLoggedIn() || !isAdmin()) {
-    echo json_encode([
-        'success' => false,
-        'error' => 'Accès non autorisé. Seuls les administrateurs peuvent scanner les billets.'
-    ]);
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+
+function respond(array $data, int $status = 200): void
+{
+    http_response_code($status);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// Récupérer le code du billet
-$ticketCode = $_GET['code'] ?? $_POST['code'] ?? '';
+if (!isLoggedIn() || !isAdmin()) {
+    respond(['success' => false, 'status' => 'error',
+             'error' => 'Accès non autorisé. Seuls les administrateurs peuvent scanner les billets.'], 403);
+}
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_valid()) {
+    respond(['success' => false, 'status' => 'error', 'error' => 'Session expirée : recharge la page du scanner.'], 400);
+}
 
-if (empty($ticketCode)) {
-    echo json_encode([
-        'success' => false,
-        'error' => 'Code du billet manquant'
-    ]);
-    exit;
+$code = strtoupper(trim((string)($_POST['code'] ?? '')));
+// Anciens QR codes qui contenaient une URL : on extrait le code
+if (preg_match('/CODE=([A-Z0-9\-]+)/', $code, $m)) {
+    $code = $m[1];
+}
+if ($code === '' || strlen($code) > 64) {
+    respond(['success' => false, 'status' => 'invalid', 'error' => 'Code du billet manquant ou invalide']);
 }
 
 try {
-    // Récupérer les informations du billet
     $stmt = $pdo->prepare("
-        SELECT et.*, 
-               e.title as event_title, 
-               e.event_date,
-               e.location as event_location,
-               u.pseudo as user_name,
-               u.email as user_email,
-               scanner.pseudo as scanned_by_name
-        FROM event_tickets et
-        JOIN events e ON et.event_id = e.id
-        JOIN users u ON et.user_id = u.id
-        LEFT JOIN users scanner ON et.scanned_by = scanner.id
-        WHERE et.ticket_code = ?
+        SELECT t.id, t.code, t.scanned_at,
+               e.title AS event_title, e.event_date,
+               COALESCE(r.first_name, u.first_name) AS first_name,
+               COALESCE(r.last_name, u.last_name)   AS last_name,
+               COALESCE(r.pseudo, u.pseudo)         AS pseudo,
+               COALESCE(et.team_name, r.team) AS team_name, COALESCE(et.team_color, '#a3a3a3') AS team_color,
+               s.pseudo AS scanned_by_name
+        FROM tickets t
+        JOIN registrations r ON r.id = t.registration_id
+        JOIN events e ON e.id = t.event_id
+        LEFT JOIN users u ON u.id = r.user_id
+        LEFT JOIN event_teams et ON et.event_id = r.event_id AND et.team_key = r.team
+        LEFT JOIN users s ON s.id = t.scanned_by
+        WHERE t.code = ?
     ");
-    $stmt->execute([$ticketCode]);
-    $ticket = $stmt->fetch();
-    
+    $stmt->execute([$code]);
+    $ticket = $stmt->fetch(PDO::FETCH_ASSOC);
+
     if (!$ticket) {
-        echo json_encode([
-            'success' => false,
-            'error' => 'Billet invalide ou introuvable',
-            'status' => 'invalid'
-        ]);
-        exit;
+        respond(['success' => false, 'status' => 'invalid', 'error' => 'Billet invalide ou introuvable (place annulée ou remboursée ?)']);
     }
-    
-    // Vérifier si le billet a déjà été scanné
-    if ($ticket['is_scanned']) {
-        $scannedAt = date('d/m/Y à H:i', strtotime($ticket['scanned_at']));
-        echo json_encode([
-            'success' => false,
-            'error' => 'Ce billet a déjà été scanné',
-            'status' => 'already_scanned',
-            'ticket' => [
-                'code' => $ticket['ticket_code'],
-                'event' => $ticket['event_title'],
-                'participant' => $ticket['user_name'],
-                'scanned_at' => $scannedAt,
-                'scanned_by' => $ticket['scanned_by_name']
-            ]
-        ]);
-        exit;
+
+    $name = full_name($ticket['first_name'], $ticket['last_name']);
+    $info = [
+        'code'        => $ticket['code'],
+        'event'       => $ticket['event_title'],
+        'event_date'  => date('d/m/Y à H:i', strtotime($ticket['event_date'])),
+        'participant' => $name !== '' ? $name : 'Invité non renseigné',
+        'pseudo'      => $ticket['pseudo'] ?: '-',
+        'team'        => $ticket['team_name'],
+        'team_color'  => $ticket['team_color'],
+    ];
+
+    if ($ticket['scanned_at']) {
+        $info['scanned_at'] = date('d/m/Y à H:i', strtotime($ticket['scanned_at']));
+        $info['scanned_by'] = $ticket['scanned_by_name'] ?? '-';
+        respond(['success' => false, 'status' => 'already_scanned', 'error' => 'Ce billet a déjà été scanné', 'ticket' => $info]);
     }
-    
-    // Vérifier si l'événement est passé
-    $eventDate = strtotime($ticket['event_date']);
-    $now = time();
-    
-    if ($eventDate < ($now - 86400)) { // Si l'événement date de plus de 24h
-        echo json_encode([
-            'success' => false,
-            'error' => 'L\'événement est terminé depuis plus de 24h',
-            'status' => 'expired',
-            'ticket' => [
-                'code' => $ticket['ticket_code'],
-                'event' => $ticket['event_title'],
-                'participant' => $ticket['user_name'],
-                'event_date' => date('d/m/Y à H:i', $eventDate)
-            ]
-        ]);
-        exit;
+
+    $eventTs = strtotime($ticket['event_date']);
+    if ($eventTs < time() - 86400) {
+        respond(['success' => false, 'status' => 'expired', 'error' => 'La partie est terminée depuis plus de 24 h', 'ticket' => $info]);
     }
-    
-    // Scanner le billet (marquer comme scanné)
-    $stmt = $pdo->prepare("
-        UPDATE event_tickets 
-        SET is_scanned = 1, 
-            scanned_at = NOW(), 
-            scanned_by = ?
-        WHERE id = ?
-    ");
-    $stmt->execute([$_SESSION['user_id'], $ticket['id']]);
-    
-    // Optionnel : Envoyer un email de confirmation
-    // require_once __DIR__ . '/send_ticket_email.php';
-    // $emailer = new TicketEmailer();
-    // $emailer->sendScanConfirmation($ticket);
-    
-    echo json_encode([
-        'success' => true,
-        'status' => 'valid',
-        'message' => 'Entrée validée avec succès !',
-        'ticket' => [
-            'id' => $ticket['id'],
-            'code' => $ticket['ticket_code'],
-            'event' => $ticket['event_title'],
-            'event_date' => date('d/m/Y à H:i', $eventDate),
-            'participant' => $ticket['user_name'],
-            'email' => $ticket['user_email'],
-            'scanned_at' => date('d/m/Y à H:i'),
-            'scanned_by' => $_SESSION['pseudo']
-        ]
-    ]);
-    
-} catch (PDOException $e) {
-    // Erreur de base de données
-    error_log("Erreur BD dans validate_ticket.php: " . $e->getMessage());
-    echo json_encode([
-        'success' => false,
-        'error' => 'Erreur de connexion à la base de données',
-        'status' => 'error',
-        'debug' => $e->getMessage()
-    ]);
-} catch (Exception $e) {
-    // Autre erreur
-    error_log("Erreur dans validate_ticket.php: " . $e->getMessage());
-    echo json_encode([
-        'success' => false,
-        'error' => 'Erreur serveur: ' . $e->getMessage(),
-        'status' => 'error'
-    ]);
+    if ($eventTs > time() + 86400) {
+        respond(['success' => false, 'status' => 'too_early', 'error' => 'Ce billet est pour une partie qui n\'a pas lieu aujourd\'hui', 'ticket' => $info]);
+    }
+
+    // Validation atomique : impossible de valider deux fois le même billet
+    $stmt = $pdo->prepare("UPDATE tickets SET scanned_at = NOW(), scanned_by = ? WHERE id = ? AND scanned_at IS NULL");
+    $stmt->execute([current_user_id(), $ticket['id']]);
+    if ($stmt->rowCount() !== 1) {
+        respond(['success' => false, 'status' => 'already_scanned', 'error' => 'Ce billet vient d\'être scanné', 'ticket' => $info]);
+    }
+
+    $info['scanned_at'] = date('d/m/Y à H:i');
+    $info['scanned_by'] = $_SESSION['pseudo'] ?? '';
+    $warning = $name === '' ? 'Invité non renseigné : vérifie son identité.' : null;
+
+    respond(['success' => true, 'status' => 'valid', 'message' => 'Entrée validée !', 'warning' => $warning, 'ticket' => $info]);
+} catch (Throwable $e) {
+    error_log('validate_ticket.php : ' . $e->getMessage());
+    respond(['success' => false, 'status' => 'error', 'error' => 'Erreur serveur, réessaie.'], 500);
 }

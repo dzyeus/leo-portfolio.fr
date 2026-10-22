@@ -493,6 +493,17 @@ requireAdmin();
     <script>
         let html5QrcodeScanner = null;
         let soundEnabled = true;
+        const CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
+        let requestInFlight = false;
+        let lastCode = '';
+        let lastCodeTime = 0;
+
+        // Échappe le texte venant du serveur avant de l'afficher (noms saisis par les joueurs)
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
         let scanCount = 0;
         let successCount = 0;
         
@@ -534,14 +545,17 @@ requireAdmin();
         }
         
         function onScanSuccess(decodedText, decodedResult) {
-            // Le QR code contient juste le code du billet (ex: TKT-xxxxxxxxxx)
-            let ticketCode = decodedText.trim();
-            
-            // Si c'est une URL (anciens billets), extraire le code
-            if (ticketCode.includes('code=')) {
-                ticketCode = ticketCode.split('code=')[1].split('&')[0];
+            // Le QR code contient juste le code du billet (ex: MAT-XXXXXXXX…)
+            const ticketCode = decodedText.trim();
+
+            // La caméra lit le même QR code plusieurs fois par seconde : on ne le traite qu'une fois
+            const now = Date.now();
+            if (requestInFlight || (ticketCode === lastCode && now - lastCodeTime < 4000)) {
+                return;
             }
-            
+            lastCode = ticketCode;
+            lastCodeTime = now;
+
             validateTicket(ticketCode);
         }
         
@@ -555,36 +569,43 @@ requireAdmin();
             
             showResult('loading', 'Validation en cours...', '');
             
-            fetch('validate_ticket.php?code=' + encodeURIComponent(ticketCode))
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('HTTP ' + response.status);
-                    }
-                    return response.json();
-                })
+            requestInFlight = true;
+            fetch('validate_ticket.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRF-Token': CSRF_TOKEN
+                },
+                body: 'code=' + encodeURIComponent(ticketCode) + '&csrf_token=' + encodeURIComponent(CSRF_TOKEN),
+                credentials: 'same-origin'
+            })
+                .then(response => response.json().catch(() => {
+                    throw new Error('HTTP ' + response.status);
+                }))
                 .then(data => {
+                    requestInFlight = false;
                     if (data.success) {
                         successCount++;
                         updateStats();
                         playSound('success');
-                        showResult('success', 'Entrée validée !', formatTicketInfo(data.ticket));
+                        const warning = data.warning ? '<p><strong>⚠️ ' + escapeHtml(data.warning) + '</strong></p>' : '';
+                        showResult('success', 'Entrée validée !', warning + formatTicketInfo(data.ticket));
                     } else {
                         playSound('error');
                         if (data.status === 'already_scanned') {
                             showResult('warning', 'Déjà scanné', 'Ce billet a déjà été utilisé<br>' + formatTicketInfo(data.ticket));
+                        } else if (data.ticket) {
+                            showResult('error', escapeHtml(data.error), formatTicketInfo(data.ticket));
                         } else {
-                            let errorMsg = data.error;
-                            if (data.debug) {
-                                errorMsg += '<br><small style="opacity:0.7">Debug: ' + data.debug + '</small>';
-                            }
-                            showResult('error', 'Erreur', errorMsg);
+                            showResult('error', 'Erreur', escapeHtml(data.error || 'Billet invalide'));
                         }
                     }
                 })
                 .catch(error => {
+                    requestInFlight = false;
                     console.error('Erreur fetch:', error);
                     playSound('error');
-                    showResult('error', 'Erreur', 'Erreur de connexion au serveur<br><small>' + error.message + '</small>');
+                    showResult('error', 'Erreur', 'Erreur de connexion au serveur<br><small>' + escapeHtml(error.message) + '</small>');
                 });
         }
         
@@ -592,21 +613,29 @@ requireAdmin();
             return `
                 <div class="ticket-info">
                     <div class="info-row">
-                        <div class="info-label">Code:</div>
-                        <div class="info-value"><strong>${ticket.code}</strong></div>
+                        <div class="info-label">Participant:</div>
+                        <div class="info-value"><strong>${escapeHtml(ticket.participant)}</strong></div>
                     </div>
                     <div class="info-row">
-                        <div class="info-label">Participant:</div>
-                        <div class="info-value">${ticket.participant}</div>
+                        <div class="info-label">Pseudo:</div>
+                        <div class="info-value">${escapeHtml(ticket.pseudo)}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Équipe:</div>
+                        <div class="info-value" style="border-left: 4px solid ${/^#[0-9a-fA-F]{6}$/.test(ticket.team_color || '') ? ticket.team_color : '#a3a3a3'}; padding-left: 8px;">${escapeHtml(ticket.team)}</div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Événement:</div>
-                        <div class="info-value">${ticket.event}</div>
+                        <div class="info-value">${escapeHtml(ticket.event)}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Code:</div>
+                        <div class="info-value"><small>${escapeHtml(ticket.code)}</small></div>
                     </div>
                     ${ticket.scanned_at ? `
                     <div class="info-row">
                         <div class="info-label">Scanné le:</div>
-                        <div class="info-value">${ticket.scanned_at}</div>
+                        <div class="info-value">${escapeHtml(ticket.scanned_at)}${ticket.scanned_by ? ' par ' + escapeHtml(ticket.scanned_by) : ''}</div>
                     </div>
                     ` : ''}
                 </div>
