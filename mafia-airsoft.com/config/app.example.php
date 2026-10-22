@@ -69,16 +69,20 @@ define('CHECKOUT_HOLD_MINUTES', 30);        // Durée de réservation des places
 // ---------------------------------------------------------------------
 // Emails (SMTP)
 // ---------------------------------------------------------------------
-// Si tu avais déjà un fichier qr-code/email_config.php sur le serveur,
-// tu peux recopier les mêmes valeurs ici.
-// o2switch : mets le NOM DE TON SERVEUR (cPanel, colonne de droite), au format xxxx.o2switch.net.
-// Avec mail.mafia-airsoft.com, l'envoi peut échouer (certificat SSL). Test : Admin › Diagnostic.
+// Mode d'envoi :
+//   'mail' = fonction mail() du serveur o2switch → RECOMMANDÉ : rien d'autre à régler que FROM_EMAIL
+//   'smtp' = serveur SMTP (les lignes SMTP_* ci-dessous). o2switch bloque Gmail/Outlook en SMTP.
+define('MAIL_TRANSPORT', 'mail');
+
+// Utilisé seulement si MAIL_TRANSPORT = 'smtp' : boîte contact@ créée dans cPanel,
+// avec le NOM RÉEL de ton serveur (cPanel, colonne de droite), au format xxxx.o2switch.net.
 define('SMTP_HOST', 'xxxx.o2switch.net');
 define('SMTP_PORT', 465);
 define('SMTP_USERNAME', 'contact@mafia-airsoft.com');
 define('SMTP_PASSWORD', 'A_REMPLACER');  // mot de passe de la BOÎTE MAIL (pas celui de cPanel)
 define('SMTP_SECURE', 'ssl');               // 'ssl' (port 465) ou 'tls' (port 587)
 
+// Expéditeur : TOUJOURS une adresse du domaine du site (pas une adresse Gmail), sinon spam / rejet
 define('FROM_EMAIL', 'contact@mafia-airsoft.com');
 define('FROM_NAME', 'Mafia Airsoft Team');
 define('REPLY_TO_EMAIL', 'contact@mafia-airsoft.com');

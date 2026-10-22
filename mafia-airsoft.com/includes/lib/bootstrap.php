@@ -21,6 +21,8 @@ if (!defined('SMTP_HOST') && is_file(MAT_ROOT . '/qr-code/email_config.php')) {
 
 // Valeurs par défaut si une constante manque dans config/app.php
 $matDefaults = [
+    // 'mail' = fonction mail() du serveur (le plus simple sur o2switch), 'smtp' = serveur SMTP
+    'MAIL_TRANSPORT'            => (defined('USE_PHP_MAIL') && USE_PHP_MAIL) ? 'mail' : 'smtp',
     'APP_DEBUG'                 => false,
     'SITE_URL'                  => 'https://mafia-airsoft.com',
     'SITE_NAME'                 => 'Mafia Airsoft Team',

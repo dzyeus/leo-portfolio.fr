@@ -3,11 +3,23 @@
  * Envoi d'emails (PHPMailer + SMTP de config/app.php).
  */
 
+/** Envoi via la fonction mail() du serveur (au lieu d'un serveur SMTP) ? */
+function mail_uses_php_mail(): bool
+{
+    return strtolower((string)MAIL_TRANSPORT) === 'mail';
+}
+
 /** Le SMTP est-il renseigné dans config/app.php ? */
 function smtp_configured(): bool
 {
     return SMTP_HOST !== '' && SMTP_USERNAME !== '' && SMTP_PASSWORD !== ''
-        && !str_contains(SMTP_PASSWORD, 'A_REMPLACER');
+        && !str_contains(SMTP_PASSWORD, 'A_REMPLACER') && !str_contains(SMTP_HOST, 'xxxx');
+}
+
+/** L'envoi d'emails est-il configuré (mail() ou SMTP) ? */
+function mail_configured(): bool
+{
+    return mail_uses_php_mail() ? FROM_EMAIL !== '' : smtp_configured();
 }
 
 /** Crée un PHPMailer configuré avec le SMTP de config/app.php. */
@@ -15,17 +27,23 @@ function mailer_create(): PHPMailer\PHPMailer\PHPMailer
 {
     require_vendor();
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
-    $mail->isSMTP();
-    $mail->Host       = SMTP_HOST;
-    $mail->SMTPAuth   = true;
-    $mail->Username   = SMTP_USERNAME;
-    $mail->Password   = SMTP_PASSWORD;
-    $mail->SMTPSecure = SMTP_SECURE;
-    $mail->Port       = (int)SMTP_PORT;
-    $mail->CharSet    = 'UTF-8';
-    $mail->Timeout    = 20;
-    // Ne jamais bloquer une page plus de 30 s si le serveur mail ne répond plus
-    $mail->getSMTPInstance()->Timelimit = 30;
+    $mail->CharSet = 'UTF-8';
+    if (mail_uses_php_mail()) {
+        // Serveur mail de l'hébergeur (o2switch) : pas de mot de passe, signé pour le domaine du site
+        $mail->isMail();
+        $mail->Sender = FROM_EMAIL; // adresse de retour : nécessaire pour ne pas finir en spam
+    } else {
+        $mail->isSMTP();
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USERNAME;
+        $mail->Password   = SMTP_PASSWORD;
+        $mail->SMTPSecure = SMTP_SECURE;
+        $mail->Port       = (int)SMTP_PORT;
+        $mail->Timeout    = 20;
+        // Ne jamais bloquer une page plus de 30 s si le serveur mail ne répond plus
+        $mail->getSMTPInstance()->Timelimit = 30;
+    }
     $mail->setFrom(FROM_EMAIL, FROM_NAME);
     $mail->addReplyTo(REPLY_TO_EMAIL, REPLY_TO_NAME);
     return $mail;
@@ -39,8 +57,8 @@ function mailer_create(): PHPMailer\PHPMailer\PHPMailer
  */
 function send_mail(string $toEmail, string $toName, string $subject, string $html, array $attachments = [], array $headers = []): bool
 {
-    if (!smtp_configured()) {
-        error_log('Email non envoyé (SMTP non configuré dans config/app.php) : ' . $subject . ' → ' . $toEmail);
+    if (!mail_configured()) {
+        error_log('Email non envoyé (envoi non configuré dans config/app.php) : ' . $subject . ' → ' . $toEmail);
         return false;
     }
 
@@ -81,13 +99,19 @@ function smtp_test(string $toEmail): array
     $log = [];
     $result = ['ok' => false, 'error' => '', 'log' => &$log, 'hint' => ''];
 
-    if (!smtp_configured()) {
-        $result['error'] = 'SMTP non configuré : renseigne SMTP_HOST, SMTP_USERNAME et SMTP_PASSWORD dans config/app.php.';
+    if (!mail_configured()) {
+        $result['error'] = mail_uses_php_mail()
+            ? 'FROM_EMAIL est vide dans config/app.php.'
+            : 'SMTP non configuré : renseigne SMTP_HOST (nom réel du serveur), SMTP_USERNAME et SMTP_PASSWORD dans config/app.php, '
+              . 'ou passe MAIL_TRANSPORT à \'mail\'.';
         return $result;
     }
 
     try {
         $mail = mailer_create();
+        if (mail_uses_php_mail()) {
+            $log[] = 'Envoi via la fonction mail() du serveur (MAIL_TRANSPORT = mail), expéditeur ' . FROM_EMAIL;
+        }
         $mail->SMTPDebug = PHPMailer\PHPMailer\SMTP::DEBUG_SERVER;
         $mail->Debugoutput = function ($line) use (&$log) {
             $line = trim((string)$line);
@@ -110,15 +134,19 @@ function smtp_test(string $toEmail): array
     // Explication en clair des erreurs les plus courantes
     $all = mb_strtolower($result['error'] . ' ' . implode(' ', $log));
     if (!$result['ok']) {
-        if (str_contains($all, 'certificate') || str_contains($all, 'ssl operation failed') || str_contains($all, 'peer')) {
+        if (mail_uses_php_mail()) {
+            $result['hint'] = 'La fonction mail() du serveur a refusé l\'envoi : vérifie que FROM_EMAIL est une adresse '
+                . 'du domaine du site (contact@mafia-airsoft.com) qui existe dans cPanel › Comptes de messagerie.';
+        } elseif (str_contains($all, 'certificate') || str_contains($all, 'ssl operation failed') || str_contains($all, 'peer')) {
             $result['hint'] = 'Problème de certificat SSL : mets dans SMTP_HOST le nom de ton serveur o2switch '
                 . '(xxxx.o2switch.net, visible dans cPanel) au lieu de mail.mafia-airsoft.com.';
         } elseif (str_contains($all, 'authenticate') || str_contains($all, '535')) {
             $result['hint'] = 'Identifiants refusés : SMTP_USERNAME doit être l\'adresse complète (contact@mafia-airsoft.com) '
                 . 'et SMTP_PASSWORD le mot de passe de CETTE boîte mail (cPanel › Comptes de messagerie), pas celui de cPanel.';
         } elseif (str_contains($all, 'connect') || str_contains($all, 'timed out') || str_contains($all, 'getaddrinfo')) {
-            $result['hint'] = 'Connexion impossible : vérifie SMTP_HOST (xxxx.o2switch.net), et le couple port/sécurité : '
-                . '465 avec \'ssl\', ou 587 avec \'tls\'.';
+            $result['hint'] = 'Connexion au serveur SMTP impossible. o2switch bloque les serveurs SMTP extérieurs (Gmail, Outlook…). '
+                . 'Le plus simple : mets define(\'MAIL_TRANSPORT\', \'mail\'); et FROM_EMAIL = contact@mafia-airsoft.com dans config/app.php. '
+                . 'Sinon, utilise la boîte contact@ d\'o2switch avec SMTP_HOST = le vrai nom du serveur (xxxx.o2switch.net), port 465, ssl.';
         } elseif (str_contains($all, 'sender') || str_contains($all, 'from')) {
             $result['hint'] = 'Expéditeur refusé : FROM_EMAIL doit être la même adresse que SMTP_USERNAME (ou une adresse du même domaine).';
         } elseif (str_contains($all, 'dépendances') || str_contains($all, 'composer')) {

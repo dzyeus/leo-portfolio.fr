@@ -60,8 +60,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'email') {
 $vendorOk = is_file(MAT_ROOT . '/vendor/autoload.php');
 $configOk = is_file(MAT_ROOT . '/config/app.php');
 $secureOk = (SMTP_SECURE === 'ssl' && (int)SMTP_PORT === 465) || (SMTP_SECURE === 'tls' && (int)SMTP_PORT === 587);
-$fromOk = strcasecmp(FROM_EMAIL, SMTP_USERNAME) === 0
-    || strcasecmp(substr(strrchr(FROM_EMAIL, '@') ?: '', 1), substr(strrchr(SMTP_USERNAME, '@') ?: '', 1)) === 0;
+$siteDomain = preg_replace('/^www\./', '', (string)parse_url(SITE_URL, PHP_URL_HOST));
+$fromDomain = strtolower(substr(strrchr(FROM_EMAIL, '@') ?: '', 1));
+$fromOk = mail_uses_php_mail()
+    ? $fromDomain === strtolower($siteDomain)
+    : (strcasecmp(FROM_EMAIL, SMTP_USERNAME) === 0
+       || strcasecmp($fromDomain, substr(strrchr(SMTP_USERNAME, '@') ?: '', 1)) === 0);
 
 // Joueurs en attente de confirmation
 $pending = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE email_verified_at IS NULL")->fetchColumn();
@@ -139,11 +143,17 @@ function check_line(bool $ok, string $label, string $detail = ''): void
                 <ul class="check-list">
                     <?php check_line($configOk, 'Fichier config/app.php présent'); ?>
                     <?php check_line($vendorOk, 'PHPMailer installé (dossier vendor/)'); ?>
-                    <?php check_line(smtp_configured(), 'SMTP renseigné', 'serveur : ' . (SMTP_HOST ?: 'vide') . ', compte : ' . (SMTP_USERNAME ?: 'vide')); ?>
-                    <?php check_line($secureOk, 'Port et sécurité cohérents', SMTP_PORT . ' / ' . (SMTP_SECURE ?: 'aucune') . ' — attendu 465/ssl ou 587/tls'); ?>
-                    <?php check_line($fromOk, 'Expéditeur du même domaine que le compte SMTP', 'FROM_EMAIL : ' . FROM_EMAIL); ?>
-                    <?php check_line(str_ends_with(strtolower(SMTP_HOST), '.o2switch.net'), 'Serveur au format xxxx.o2switch.net',
-                        'recommandé par o2switch pour éviter les erreurs de certificat'); ?>
+                    <li>ℹ️ Mode d'envoi : <strong><?= mail_uses_php_mail() ? 'fonction mail() du serveur' : 'SMTP' ?></strong>
+                        <small>(MAIL_TRANSPORT = '<?= e(MAIL_TRANSPORT) ?>')</small></li>
+                    <?php if (mail_uses_php_mail()): ?>
+                        <?php check_line($fromOk, 'Expéditeur sur le domaine du site', 'FROM_EMAIL : ' . FROM_EMAIL . ' — attendu …@' . $siteDomain . ', sinon les emails finissent en spam ou sont rejetés'); ?>
+                    <?php else: ?>
+                        <?php check_line(smtp_configured(), 'SMTP renseigné', 'serveur : ' . (SMTP_HOST ?: 'vide') . ', compte : ' . (SMTP_USERNAME ?: 'vide')); ?>
+                        <?php check_line($secureOk, 'Port et sécurité cohérents', SMTP_PORT . ' / ' . (SMTP_SECURE ?: 'aucune') . ' — attendu 465/ssl ou 587/tls'); ?>
+                        <?php check_line($fromOk, 'Expéditeur du même domaine que le compte SMTP', 'FROM_EMAIL : ' . FROM_EMAIL); ?>
+                        <?php check_line(!preg_match('/gmail|outlook|hotmail|yahoo|office365/i', SMTP_HOST), 'Serveur SMTP chez o2switch',
+                            'o2switch bloque Gmail/Outlook en SMTP : utilise MAIL_TRANSPORT = mail ou la boîte contact@ d\'o2switch'); ?>
+                    <?php endif; ?>
                 </ul>
                 <?php if ($pending > 0): ?>
                     <p style="margin-top: var(--spacing-md);">⏳ <?= $pending ?> compte(s) en attente de confirmation d'email.
