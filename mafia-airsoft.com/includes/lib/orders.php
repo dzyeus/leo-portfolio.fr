@@ -190,7 +190,8 @@ function stripe_error_hint(string $message): string
             . 'Vérifie que la clé vient bien de l\'environnement de test « Mafia Airsoft Team », ou laisse STRIPE_PRODUCT_ID vide.';
     }
     if (str_contains($m, 'permission') || str_contains($m, 'rk_')) {
-        return 'Clé restreinte sans les droits Checkout : utilise la clé secrète standard (sk_test_…).';
+        return 'Clé restreinte sans les bons droits : dans Stripe › Développeurs › Clés API, modifie-la pour donner '
+            . '« Checkout Sessions : Écriture » et « Produits : Lecture », ou utilise la clé secrète standard (sk_test_…).';
     }
     if (str_contains($m, 'réseau') || str_contains($m, 'curl') || str_contains($m, 'resolve') || str_contains($m, 'timed out')) {
         return 'Le serveur n\'arrive pas à joindre api.stripe.com : contacte le support o2switch.';

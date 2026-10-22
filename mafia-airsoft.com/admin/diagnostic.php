@@ -20,11 +20,12 @@ $keyType = match (true) {
     $keyPlaceholder                  => 'non renseignée',
     str_starts_with($key, 'sk_test_') => 'secrète de TEST',
     str_starts_with($key, 'sk_live_') => 'secrète LIVE (paiements réels)',
-    str_starts_with($key, 'rk_')      => 'restreinte',
+    str_starts_with($key, 'rk_test_') => 'restreinte de TEST (droits nécessaires : Checkout Sessions = Écriture, Produits = Lecture)',
+    str_starts_with($key, 'rk_live_') => 'restreinte LIVE (droits nécessaires : Checkout Sessions = Écriture, Produits = Lecture)',
     str_starts_with($key, 'pk_')      => 'PUBLIQUE (mauvaise clé)',
     default                          => 'format inconnu',
 };
-$keyOk = str_starts_with($key, 'sk_test_') || str_starts_with($key, 'sk_live_');
+$keyOk = (bool)preg_match('/^(sk|rk)_(test|live)_/', $key);
 $keyClean = $key === trim($key);
 $whsec = (string)STRIPE_WEBHOOK_SECRET;
 $whsecOk = str_starts_with($whsec, 'whsec_') && !str_contains($whsec, 'A_REMPLACER');
