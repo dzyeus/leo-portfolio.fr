@@ -63,7 +63,7 @@ function receipt_pdf(array $order, array $places = []): string
     $pdf->Cell(28, 8, 'Total  ', 0, 1, 'R', true);
 
     $label = "Place – Partie d'airsoft\n" . $order['event_title'] . "\n"
-        . ucfirst(date_fr($order['event_date'])) . ' · Équipe ' . ($order['team_name'] ?? $order['team_key']);
+        . ucfirst(date_fr($order['event_date'])) . ' · ' . ($order['team_name'] ?? $order['team_key']);
 
     $pdf->SetTextColor(20, 20, 20);
     $pdf->SetFont('dejavusans', '', 9);
