@@ -7,9 +7,13 @@ $username = '';
 // Si le formulaire est soumis
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
-    $password = trim($_POST['password'] ?? '');
+    $password = $_POST['password'] ?? '';
 
-    if ($username === '' || $password === '') {
+    if (!csrf_valid()) {
+        $error = "Session expirée, recharge la page.";
+    } elseif (login_blocked()) {
+        $error = "Trop de tentatives. Réessaie dans 15 minutes.";
+    } elseif ($username === '' || $password === '') {
         $error = "Merci de remplir tous les champs.";
     } else {
         // Récupérer l'admin depuis la base
@@ -17,8 +21,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$username]);
         $admin = $stmt->fetch();
 
-        if ($admin && password_verify($password, $admin['password_hash'])) {
-            // Connexion OK → on stocke les infos dans la session
+        // Hachage factice si le compte n'existe pas : même temps de réponse
+        $hash = $admin['password_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuR2Ur1Zt/5i8xF2y5b9w0bNq3nX0q2ry';
+        if (password_verify($password, $hash) && $admin) {
+            // Connexion OK → nouvelle session (anti vol de session) puis infos de l'admin
+            login_succeeded();
+            session_regenerate_id(true);
             $_SESSION['admin_logged_in'] = true;
             $_SESSION['admin_id'] = $admin['id'];
             $_SESSION['admin_username'] = $admin['username'];
@@ -27,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: panel.php');
             exit;
         } else {
+            login_failed();
             $error = "Identifiants incorrects.";
         }
     }
@@ -50,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <form method="post">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
             <div class="form-group">
                 <label for="username">Nom d'utilisateur</label>
                 <input type="text"

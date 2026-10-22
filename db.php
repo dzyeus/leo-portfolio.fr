@@ -1,9 +1,13 @@
 <?php
-// === Paramètres à modifier avec ceux de ton cPanel ===
-$DB_HOST = 'localhost:3306';       // en général "localhost" sur cPanel
-$DB_NAME = 'zelu6269_panel_portfolio'; // ex : monsite_portfolio
-$DB_USER = 'zelu6269_user_portfolio';    // ex : monsite_admin
-$DB_PASS = 'K_[y(;439p3)';     // le mot de passe MySQL
+// Connexion à la base du panel.
+// Les identifiants ne sont PLUS dans ce fichier (il est sur GitHub) :
+// ils sont dans db.config.php, à créer sur le serveur à partir de db.config.example.php.
+$dbConfigFile = __DIR__ . '/db.config.php';
+if (!is_file($dbConfigFile)) {
+    http_response_code(500);
+    die('Configuration de la base manquante (db.config.php).');
+}
+require $dbConfigFile;
 
 try {
     $pdo = new PDO(
@@ -17,6 +21,7 @@ try {
     );
 } catch (PDOException $e) {
     // En prod on évite d'afficher l'erreur exacte
+    error_log('Connexion BDD panel : ' . $e->getMessage());
     die("Erreur de connexion à la base de données.");
 }
-?>
+unset($DB_PASS);

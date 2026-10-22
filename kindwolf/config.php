@@ -8,10 +8,13 @@
 // define('DB_PASS', '');
 
 // Configuration de la base de donnees serveur
-define('DB_HOST', 'localhost:3306');
-define('DB_NAME', 'zelu6269_panel_kindwolf');
-define('DB_USER', 'zelu6269_user_kindwolf');
-define('DB_PASS', '!jwD%]SuRO*~');
+// Les identifiants ne sont PLUS dans ce fichier (il est sur GitHub) : ils sont dans
+// config.local.php, à créer sur le serveur à partir de config.local.example.php.
+if (!is_file(__DIR__ . '/config.local.php')) {
+    http_response_code(500);
+    die('Configuration manquante (config.local.php).');
+}
+require_once __DIR__ . '/config.local.php';
 
 // Configuration de l'URL de base
 // IMPORTANT: Changez '/kindwolf' par '/' si votre site est à la racine du domaine
@@ -30,7 +33,9 @@ try {
         ]
     );
 } catch (PDOException $e) {
-    die("Erreur de connexion : " . $e->getMessage());
+    // Ne jamais afficher le détail aux visiteurs (il peut contenir des infos sur le serveur)
+    error_log('Connexion BDD kindwolf : ' . $e->getMessage());
+    die("Erreur de connexion à la base de données.");
 }
 
 // Parametres du site
