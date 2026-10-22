@@ -89,13 +89,13 @@ function order_create(PDO $pdo, array $user, array $event, string $teamKey, int 
 
         $stmt = $pdo->prepare("
             INSERT INTO orders (user_id, event_id, team_key, quantity, unit_price_cents, amount_cents,
-                                status, buyer_name, buyer_email, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, " . ($isFree ? 'NULL' : 'NOW() + INTERVAL ? MINUTE') . ")
+                                status, buyer_name, buyer_email, terms_accepted_at, terms_version, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, " . ($isFree ? 'NULL' : 'NOW() + INTERVAL ? MINUTE') . ")
         ");
         $params = [
             $user['id'], $event['id'], $teamKey, $quantity, $unitPrice, $unitPrice * $quantity,
             $isFree ? 'free' : 'pending',
-            full_name($user['first_name'], $user['last_name']), $user['email'],
+            full_name($user['first_name'], $user['last_name']), $user['email'], TERMS_VERSION,
         ];
         if (!$isFree) {
             // Un peu plus que la session Stripe, pour ne jamais libérer une place encore payable

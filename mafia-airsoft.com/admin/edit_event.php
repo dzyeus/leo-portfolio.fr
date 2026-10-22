@@ -1,6 +1,7 @@
 <?php
 require_once '../config/database.php';
 require_once '../config/session.php';
+require_once '../config/team_helpers.php';
 requireAdmin();
 
 $event_id = $_GET['id'] ?? 0;
@@ -50,6 +51,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->execute([$title, $description, $scenario, $full_datetime, $location, $price_cents,
                            $equipment, $rules, $is_active, $registration_open, $event_id])) {
             $success = 'Partie mise à jour avec succès !';
+            if (!empty($_POST['announce'])) {
+                $updated = getEventWithTeams($pdo, $event_id);
+                if ($updated && event_can_be_announced($updated)) {
+                    $success .= ' Annonce envoyée à ' . announce_event($pdo, $event_id) . ' joueur(s) abonné(s).';
+                } else {
+                    $error = 'Annonce non envoyée : la partie doit être active, à venir et avec les inscriptions ouvertes.';
+                }
+            }
             // Recharger les données
             $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ?");
             $stmt->execute([$event_id]);
@@ -163,6 +172,18 @@ $event_time_only = date('H:i', strtotime($event['event_date']));
                                <?= $event['registration_open'] ? 'checked' : '' ?>>
                         <label for="registration_open">Inscriptions ouvertes</label>
                     </div>
+
+                    <div class="form-group-checkbox">
+                        <input type="checkbox" id="announce" name="announce" value="1">
+                        <label for="announce">
+                            <?= empty($event['announced_at']) ? 'Envoyer l\'annonce' : 'Renvoyer l\'annonce' ?> par email aux joueurs abonnés
+                            (<?= subscribers_count($pdo) ?> abonné(s))
+                        </label>
+                    </div>
+                    <?php if (!empty($event['announced_at'])): ?>
+                        <small style="color:#a3a3a3;">Dernière annonce : <?= date('d/m/Y à H:i', strtotime($event['announced_at'])) ?>
+                            (<?= (int)($event['announced_count'] ?? 0) ?> email(s) envoyé(s)).</small>
+                    <?php endif; ?>
                 </div>
 
                 <div class="form-actions">

@@ -15,22 +15,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $file = $_FILES['image'];
         $title = $_POST['title'] ?? '';
         $description = $_POST['description'] ?? '';
-        $display_order = $_POST['display_order'] ?? 0;
+        $display_order = max(0, (int)($_POST['display_order'] ?? 0));
         
-        // Validation
-        $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-        $max_size = 5 * 1024 * 1024; // 5MB
+        // Validation : le contenu du fichier doit être une vraie image (JPG, PNG, WEBP, max 5 Mo)
+        $extension = uploaded_image_extension($file, 5 * 1024 * 1024);
         
-        if (!in_array($file['type'], $allowed_types)) {
-            $error = 'Type de fichier non autorisé. Utilisez JPG, PNG ou WEBP.';
-        } elseif ($file['size'] > $max_size) {
-            $error = 'Le fichier est trop volumineux. Maximum 5MB.';
-        } elseif ($file['error'] !== UPLOAD_ERR_OK) {
+        if ($file['error'] !== UPLOAD_ERR_OK) {
             $error = 'Erreur lors de l\'upload du fichier.';
+        } elseif ($file['size'] > 5 * 1024 * 1024) {
+            $error = 'Le fichier est trop volumineux. Maximum 5MB.';
+        } elseif ($extension === null || $extension === 'gif') {
+            $error = 'Type de fichier non autorisé. Utilisez JPG, PNG ou WEBP.';
         } else {
             // Générer un nom unique
-            $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $filename = 'gallery_' . time() . '_' . uniqid() . '.' . $extension;
+            $filename = random_upload_name('gallery', $extension);
             $upload_path = '../uploads/gallery/' . $filename;
             
             if (move_uploaded_file($file['tmp_name'], $upload_path)) {
@@ -50,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
     // Activer/désactiver une photo
     elseif ($action === 'toggle' && isset($_POST['id'])) {
-        $id = $_POST['id'];
+        $id = (int)$_POST['id'];
         $stmt = $pdo->prepare("UPDATE gallery SET is_active = NOT is_active WHERE id = ?");
         if ($stmt->execute([$id])) {
             $message = 'Statut mis à jour !';
@@ -59,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
     // Supprimer une photo
     elseif ($action === 'delete' && isset($_POST['id'])) {
-        $id = $_POST['id'];
+        $id = (int)$_POST['id'];
         
         // Récupérer le chemin du fichier
         $stmt = $pdo->prepare("SELECT image_path FROM gallery WHERE id = ?");
@@ -67,11 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $photo = $stmt->fetch();
         
         if ($photo) {
-            // Supprimer le fichier
-            $file_path = '../' . $photo['image_path'];
-            if (file_exists($file_path)) {
-                unlink($file_path);
-            }
+            // Supprimer le fichier (uniquement dans uploads/gallery/)
+            delete_upload($photo['image_path'], 'uploads/gallery/');
             
             // Supprimer de la BDD
             $stmt = $pdo->prepare("DELETE FROM gallery WHERE id = ?");
@@ -83,8 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
     // Mettre à jour l'ordre
     elseif ($action === 'update_order' && isset($_POST['id'])) {
-        $id = $_POST['id'];
-        $display_order = $_POST['display_order'];
+        $id = (int)$_POST['id'];
+        $display_order = max(0, (int)($_POST['display_order'] ?? 0));
         
         $stmt = $pdo->prepare("UPDATE gallery SET display_order = ? WHERE id = ?");
         if ($stmt->execute([$display_order, $id])) {

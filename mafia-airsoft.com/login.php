@@ -26,7 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user && password_verify($password, $user['password_hash'])) {
+        // Hachage factice si le compte n'existe pas : même temps de réponse (pas de devinette d'emails)
+        $hash = $user['password_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuR2Ur1Zt/5i8xF2y5b9w0bNq3nX0q2ry';
+        if (password_verify($password, $hash) && $user) {
             if (empty($user['email_verified_at'])) {
                 $unverifiedEmail = $user['email'];
                 $error = 'Ton adresse email n\'est pas encore confirmée. Clique sur le lien reçu par email.';

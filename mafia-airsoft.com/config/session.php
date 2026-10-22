@@ -19,6 +19,75 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// ---------------------------------------------------------------------
+// En-têtes de sécurité envoyés avec chaque page
+// ---------------------------------------------------------------------
+if (!headers_sent()) {
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: SAMEORIGIN');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()');
+    header("Content-Security-Policy: default-src 'self'; "
+        . "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+        . "style-src 'self' 'unsafe-inline'; "
+        . "font-src 'self' data:; "
+        . "img-src 'self' data: blob: https:; "
+        . "connect-src 'self'; media-src 'self' data: blob:; "
+        . "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; "
+        . "form-action 'self' https://checkout.stripe.com");
+    if ($isHttps ?? ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'))) {
+        header('Strict-Transport-Security: max-age=31536000');
+    }
+}
+
+// ---------------------------------------------------------------------
+// Protection CSRF de TOUS les formulaires du site
+// ---------------------------------------------------------------------
+// - chaque formulaire POST reçoit automatiquement un champ caché csrf_token
+// - toute requête POST sans jeton valide est refusée
+$csrfTokenForForms = csrf_token();
+// (SKIP_CSRF : uniquement pour les pages protégées autrement, ex. lien signé de désabonnement)
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !defined('SKIP_CSRF') && !csrf_valid()) {
+    http_response_code(400);
+    exit('Session expirée ou formulaire invalide. Recharge la page et réessaie.');
+}
+ob_start(function (string $buffer) use ($csrfTokenForForms): string {
+    // On ne touche qu'aux pages HTML (pas aux PDF ni au JSON)
+    foreach (headers_list() as $h) {
+        if (stripos($h, 'Content-Type:') === 0 && stripos($h, 'text/html') === false) {
+            return $buffer;
+        }
+    }
+    $field = '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrfTokenForForms, ENT_QUOTES) . '">';
+    return preg_replace_callback('/<form\b[^>]*>/i', function ($m) use ($field) {
+        $tag = $m[0];
+        return preg_match('/\bmethod\s*=\s*["\']?post\b/i', $tag) ? $tag . $field : $tag;
+    }, $buffer);
+});
+
+// ---------------------------------------------------------------------
+// Session : on revérifie le compte à chaque page (compte supprimé ou
+// droits admin retirés = effet immédiat)
+// ---------------------------------------------------------------------
+if (isset($_SESSION['user_id'], $pdo) && $pdo instanceof PDO) {
+    try {
+        $stmt = $pdo->prepare("SELECT pseudo, is_admin FROM users WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id']]);
+        $sessionUser = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$sessionUser) {
+            $_SESSION = [];
+            session_regenerate_id(true);
+        } else {
+            $_SESSION['pseudo'] = $sessionUser['pseudo'];
+            $_SESSION['is_admin'] = (int)$sessionUser['is_admin'];
+            $_SESSION['role'] = ((int)$sessionUser['is_admin'] === 1) ? 'admin' : 'player';
+        }
+        unset($stmt, $sessionUser);
+    } catch (Throwable $e) {
+        // Base pas encore migrée : on ne bloque pas le site
+    }
+}
+
 // Fonction pour vérifier si l'utilisateur est connecté
 function isLoggedIn() {
     return isset($_SESSION['user_id']);

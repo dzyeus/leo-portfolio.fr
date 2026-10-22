@@ -50,10 +50,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'book') {
         $user = current_user($pdo);
+        if (empty($_POST['accept_terms'])) {
+            $error = 'Coche la case d\'acceptation des conditions générales pour réserver.';
+        }
         if (!profile_is_complete($user)) {
             redirect('player/profile.php?complete=1&return=' . urlencode('event.php?id=' . $event_id));
         }
         try {
+            if ($error) {
+                throw new OrderException($error);
+            }
             $order = order_create($pdo, $user, $event, (string)($_POST['team'] ?? ''), (int)($_POST['quantity'] ?? 1));
 
             if ($order['status'] === 'free') {
@@ -161,6 +167,13 @@ function render_registration_box(array $event, ?array $user_registration, bool $
                 <?php if (!$is_free): ?>
                     <small>Paiement sécurisé par carte (Stripe). Tu renseigneras tes invités juste après.</small>
                 <?php endif; ?>
+            </div>
+
+            <div class="form-group-checkbox">
+                <input type="checkbox" id="accept_terms<?= $suffix ?>" name="accept_terms" value="1" required>
+                <label for="accept_terms<?= $suffix ?>">
+                    J'accepte les <a href="cgv.php" target="_blank">conditions générales</a><?= $is_free ? '' : ' et je reconnais que, s\'agissant d\'une activité de loisirs à date fixe, je ne dispose pas de droit de rétractation (art. L221-28 12° du Code de la consommation)' ?>.
+                </label>
             </div>
 
             <p>Choisissez votre équipe :</p>
@@ -362,6 +375,5 @@ function render_registration_box(array $event, ?array $user_registration, bool $
     </main>
 
     <?php include 'includes/footer.php'; ?>
-    <script src="js/event.js"></script>
 </body>
 </html>

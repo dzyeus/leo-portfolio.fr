@@ -5,9 +5,10 @@
 
 /**
  * Envoie un email HTML. $attachments = ['nom-du-fichier.pdf' => contenu binaire, ...]
+ * $headers = en-têtes supplémentaires (ex. List-Unsubscribe).
  * Renvoie true si l'email est parti. Les erreurs sont écrites dans le log PHP.
  */
-function send_mail(string $toEmail, string $toName, string $subject, string $html, array $attachments = []): bool
+function send_mail(string $toEmail, string $toName, string $subject, string $html, array $attachments = [], array $headers = []): bool
 {
     if (SMTP_HOST === '' || SMTP_USERNAME === '') {
         error_log('Email non envoyé (SMTP non configuré dans config/app.php) : ' . $subject . ' → ' . $toEmail);
@@ -37,6 +38,10 @@ function send_mail(string $toEmail, string $toName, string $subject, string $htm
         $mail->AltBody = trim(html_entity_decode(strip_tags(
             preg_replace(['#<br\s*/?>#i', '#</p>#i', '#</h\d>#i'], "\n", $html)
         ), ENT_QUOTES, 'UTF-8'));
+
+        foreach ($headers as $name => $value) {
+            $mail->addCustomHeader($name, $value);
+        }
 
         foreach ($attachments as $filename => $content) {
             $mail->addStringAttachment($content, $filename, 'base64', 'application/pdf');

@@ -3,7 +3,7 @@ require_once '../config/database.php';
 require_once '../config/session.php';
 requireAdmin();
 
-$event_id = $_GET['id'] ?? 0;
+$event_id = (int)($_GET['id'] ?? 0);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_delete'])) {
     $stmt = $pdo->prepare("DELETE FROM events WHERE id = ?");

@@ -21,6 +21,7 @@ if (!defined('SMTP_HOST') && is_file(MAT_ROOT . '/qr-code/email_config.php')) {
 
 // Valeurs par défaut si une constante manque dans config/app.php
 $matDefaults = [
+    'APP_DEBUG'                 => false,
     'SITE_URL'                  => 'https://mafia-airsoft.com',
     'SITE_NAME'                 => 'Mafia Airsoft Team',
     'ASSO_NAME'                 => 'Mafia Airsoft Team',
@@ -29,6 +30,15 @@ $matDefaults = [
     'ASSO_SIRET'                => '',
     'ASSO_EMAIL'                => 'contact@mafia-airsoft.com',
     'ASSO_VAT_MENTION'          => 'TVA non applicable, article 261-7-1° du CGI',
+    'ASSO_PHONE'                => '',
+    'ASSO_PUBLICATION_DIRECTOR' => '',
+    'CANCEL_REFUND_DAYS'        => 7,
+    'ADULT_AGE'                 => 18,
+    'TERMS_VERSION'             => '2026-10-22',
+    'APP_SECRET'                => '',
+    'HOST_NAME'                 => 'o2switch SAS',
+    'HOST_ADDRESS'              => 'Chemin des Pardiaux, 63000 Clermont-Ferrand, France',
+    'HOST_PHONE'                => '04 73 14 15 86',
     'STRIPE_SECRET_KEY'         => '',
     'STRIPE_WEBHOOK_SECRET'     => '',
     'STRIPE_PRODUCT_ID'         => '',
@@ -51,6 +61,12 @@ foreach ($matDefaults as $name => $value) {
     }
 }
 unset($matDefaults, $name, $value);
+
+// En production : jamais d'erreur PHP affichée aux visiteurs (elles vont dans le log)
+if (!APP_DEBUG) {
+    ini_set('display_errors', '0');
+    ini_set('log_errors', '1');
+}
 
 // Dépendances Composer (TCPDF, PHPMailer) : chargées seulement quand on en a besoin
 function require_vendor(): void
@@ -77,3 +93,4 @@ require_once __DIR__ . '/stripe.php';
 require_once __DIR__ . '/tickets.php';
 require_once __DIR__ . '/receipts.php';
 require_once __DIR__ . '/orders.php';
+require_once __DIR__ . '/announcements.php';

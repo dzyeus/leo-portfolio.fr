@@ -56,6 +56,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $success = 'Profil mis à jour.';
         }
+    } elseif ($action === 'notifications') {
+        $notify = !empty($_POST['notify_new_events']) ? 1 : 0;
+        $pdo->prepare("UPDATE users SET notify_new_events = ? WHERE id = ?")->execute([$notify, $user['id']]);
+        $success = $notify ? 'Alertes activées : tu seras prévenu des nouvelles parties.' : 'Alertes désactivées.';
+    } elseif ($action === 'export') {
+        // Droit d'accès / portabilité (RGPD) : toutes les données du compte en JSON
+        $export = ['compte' => array_diff_key($user, array_flip(['password_hash']))];
+        $stmt = $pdo->prepare("SELECT o.*, e.title AS partie FROM orders o JOIN events e ON e.id = o.event_id WHERE o.user_id = ?");
+        $stmt->execute([$user['id']]);
+        $export['reservations'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $pdo->prepare("
+            SELECT r.id, e.title AS partie, e.event_date, r.team, r.first_name, r.last_name, r.pseudo, r.registered_at, t.scanned_at
+            FROM registrations r JOIN events e ON e.id = r.event_id LEFT JOIN tickets t ON t.registration_id = r.id
+            WHERE r.user_id = ? OR r.order_id IN (SELECT id FROM orders WHERE user_id = ?)
+        ");
+        $stmt->execute([$user['id'], $user['id']]);
+        $export['places'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="mes-donnees-mafia-airsoft.json"');
+        echo json_encode($export, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    } elseif ($action === 'delete_account') {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*) FROM registrations r JOIN events e ON e.id = r.event_id
+            WHERE e.event_date > NOW() AND (r.user_id = ? OR r.order_id IN (SELECT id FROM orders WHERE user_id = ?))
+        ");
+        $stmt->execute([$user['id'], $user['id']]);
+        $upcoming = (int)$stmt->fetchColumn();
+
+        if ((int)$user['is_admin'] === 1) {
+            $errors[] = 'Un compte administrateur ne peut pas être supprimé depuis cette page.';
+        } elseif (!password_verify($_POST['delete_password'] ?? '', $user['password_hash'])) {
+            $errors[] = 'Mot de passe incorrect : compte non supprimé.';
+        } elseif ($upcoming > 0) {
+            $errors[] = 'Tu as encore ' . $upcoming . ' place(s) réservée(s) pour des parties à venir. '
+                . 'Annule-les (ou contacte un organisateur) avant de supprimer ton compte.';
+        } else {
+            if (!empty($user['profile_picture'])) {
+                delete_upload($user['profile_picture'], 'uploads/profiles/');
+            }
+            // Les reçus de paiement restent archivés (obligation comptable) sans lien vers le compte
+            $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$user['id']]);
+            $_SESSION = [];
+            session_regenerate_id(true);
+            flash_set('success', 'Ton compte a été supprimé. À bientôt peut-être sur le terrain !');
+            redirect('../login.php');
+        }
     } elseif ($action === 'password') {
         $current = $_POST['current_password'] ?? '';
         $new = $_POST['new_password'] ?? '';
@@ -168,6 +216,40 @@ $form = [
                     </div>
                     <button type="submit" class="btn btn-secondary">Changer le mot de passe</button>
                 </form>
+            </section>
+
+            <section class="dashboard-section">
+                <h2>Alertes email</h2>
+                <form method="POST" class="admin-form">
+                    <input type="hidden" name="action" value="notifications">
+                    <div class="form-group-checkbox">
+                        <input type="checkbox" id="notify_new_events" name="notify_new_events" value="1" <?= !empty($user['notify_new_events']) ? 'checked' : '' ?>>
+                        <label for="notify_new_events">Me prévenir par email quand une nouvelle partie est ouverte aux inscriptions</label>
+                    </div>
+                    <button type="submit" class="btn btn-secondary">Enregistrer</button>
+                </form>
+            </section>
+
+            <section class="dashboard-section">
+                <h2>Mes données</h2>
+                <p style="margin-bottom: var(--spacing-md);">Conformément au RGPD, tu peux télécharger toutes les données liées à ton compte
+                    ou supprimer ton compte. Voir la <a href="../confidentialite.php">politique de confidentialité</a>.</p>
+                <form method="POST" style="margin-bottom: var(--spacing-lg);">
+                    <input type="hidden" name="action" value="export">
+                    <button type="submit" class="btn btn-secondary">⬇️ Télécharger mes données</button>
+                </form>
+
+                <?php if ((int)$user['is_admin'] !== 1): ?>
+                    <form method="POST" class="admin-form" onsubmit="return confirm('Supprimer définitivement ton compte ? Cette action est irréversible.');">
+                        <input type="hidden" name="action" value="delete_account">
+                        <div class="form-group">
+                            <label for="delete_password">Supprimer mon compte – confirme avec ton mot de passe</label>
+                            <input type="password" id="delete_password" name="delete_password" required autocomplete="current-password">
+                            <small>Tes reçus de paiement restent archivés 10 ans (obligation comptable), sans lien avec un compte.</small>
+                        </div>
+                        <button type="submit" class="btn btn-danger">Supprimer mon compte</button>
+                    </form>
+                <?php endif; ?>
             </section>
 
             <a href="dashboard.php" class="btn btn-secondary">← Retour à mon espace</a>

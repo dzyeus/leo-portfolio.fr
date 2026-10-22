@@ -5,6 +5,8 @@ if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
     $base_path = '../';
 } elseif (strpos($_SERVER['PHP_SELF'], '/player/') !== false) {
     $base_path = '../';
+} elseif (strpos($_SERVER['PHP_SELF'], '/qr-code/') !== false) {
+    $base_path = '../';
 }
 ?>
 <footer class="site-footer">
@@ -45,6 +47,11 @@ if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
         
         <div class="footer-bottom">
             <p>&copy; <?= date('Y') ?> Mafia Airsoft Team. Tous droits réservés.</p>
+            <p class="footer-legal">
+                <a href="<?= $base_path ?>cgv.php">Conditions générales</a> ·
+                <a href="<?= $base_path ?>confidentialite.php">Confidentialité</a> ·
+                <a href="<?= $base_path ?>mentions-legales.php">Mentions légales</a>
+            </p>
             <p class="footer-credits">
                 <img src="<?= $base_path ?>images/icons/france.png" alt="France" class="flag-fr"> Conçu et développé en France
             </p>

@@ -2,25 +2,39 @@
 
 # Activer le moteur de réécriture
 RewriteEngine On
-RewriteBase /MAT/
 
-# Rediriger vers HTTPS (à décommenter en production)
-# RewriteCond %{HTTPS} off
-# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+# Rediriger vers HTTPS (sauf en local : localhost / 127.0.0.1)
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:\d+)?$ [NC]
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Dossiers internes jamais accessibles depuis le navigateur
+RewriteRule ^(vendor|database|config|includes/lib)(/|$) - [F,L]
 
 # Page d'erreur personnalisée
-ErrorDocument 404 /MAT/404.php
+ErrorDocument 404 /404.php
 
-# Protection des fichiers sensibles
+# Protection des fichiers sensibles (fichiers cachés : .git, .env, .htaccess…)
 <FilesMatch "^\.">
-    Order allow,deny
-    Deny from all
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </FilesMatch>
 
-# Empêcher l'accès direct aux fichiers de configuration
-<FilesMatch "(config|database)\.php">
-    Order allow,deny
-    Deny from all
+# Empêcher l'accès direct aux fichiers de configuration, scripts SQL, docs et dépendances
+<FilesMatch "((config|database|app)\.php|\.(md|sql|lock|log|bak|backup|ini|sh|dist)|composer\.json)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </FilesMatch>
 
 # Compression GZIP
@@ -39,29 +53,29 @@ ErrorDocument 404 /MAT/404.php
     ExpiresByType application/javascript "access plus 1 month"
 </IfModule>
 
-# Sécurité supplémentaire
+# Sécurité supplémentaire (les pages PHP envoient aussi ces en-têtes elles-mêmes)
 <IfModule mod_headers.c>
     # Empêcher le clickjacking
-    Header always set X-Frame-Options "SAMEORIGIN"
-    
-    # Protection XSS
-    Header always set X-XSS-Protection "1; mode=block"
-    
+    Header set X-Frame-Options "SAMEORIGIN"
+
     # Empêcher le sniffing MIME
-    Header always set X-Content-Type-Options "nosniff"
-    
+    Header set X-Content-Type-Options "nosniff"
+
     # Politique de référent
-    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Ne pas annoncer la version de PHP
+    Header always unset X-Powered-By
+    Header unset X-Powered-By
 </IfModule>
 
 # Désactiver l'affichage des répertoires
 Options -Indexes
 
 # Configuration PHP (si mod_php est utilisé)
-<IfModule mod_php7.c>
+<IfModule mod_php.c>
     php_value upload_max_filesize 10M
     php_value post_max_size 10M
     php_value max_execution_time 30
-    php_value session.cookie_httponly 1
-    php_value session.cookie_secure 0
+    php_flag expose_php off
 </IfModule>

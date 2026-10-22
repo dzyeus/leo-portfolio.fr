@@ -3,7 +3,7 @@ require_once '../config/database.php';
 require_once '../config/session.php';
 requireAdmin();
 
-$event_id = $_GET['event_id'] ?? 0;
+$event_id = (int)($_GET['event_id'] ?? 0);
 
 // Récupérer l'événement
 $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ?");
@@ -25,11 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'add_team') {
         $team_key = strtoupper(trim($_POST['team_key'] ?? ''));
         $team_name = trim($_POST['team_name'] ?? '');
-        $team_color = trim($_POST['team_color'] ?? '#dc2626');
+        $team_color = safe_color(trim($_POST['team_color'] ?? ''), '#dc2626');
+        $team_name = mb_substr($team_name, 0, 100);
         $max_players = intval($_POST['max_players'] ?? 0);
         
         // Valider la clé (alphanumérique uniquement, pas d'espaces)
-        if (!preg_match('/^[A-Z0-9_]+$/', $team_key)) {
+        if (!preg_match('/^[A-Z0-9_]{1,50}$/', $team_key)) {
             $error = 'La clé doit contenir uniquement des lettres majuscules, chiffres et underscores.';
         } elseif (empty($team_name) || $max_players < 0) {
             $error = 'Veuillez remplir tous les champs correctement.';
@@ -60,7 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'update_team') {
         $team_id = intval($_POST['team_id'] ?? 0);
         $team_name = trim($_POST['team_name'] ?? '');
-        $team_color = trim($_POST['team_color'] ?? '#dc2626');
+        $team_color = safe_color(trim($_POST['team_color'] ?? ''), '#dc2626');
+        $team_name = mb_substr($team_name, 0, 100);
         $max_players = intval($_POST['max_players'] ?? 0);
         
         if (empty($team_name) || $max_players < 0) {
@@ -183,6 +185,9 @@ $teams = $stmt->fetchAll();
                 </div>
             </div>
 
+            <?php foreach (flash_get() as $flash): ?>
+                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
+            <?php endforeach; ?>
             <?php if ($message): ?>
                 <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
             <?php endif; ?>
@@ -241,7 +246,7 @@ $teams = $stmt->fetchAll();
                         
                         <?php foreach ($teams as $index => $team): ?>
                             <div class="team-card">
-                                <div class="color-preview" style="background-color: <?= htmlspecialchars($team['team_color']) ?>"></div>
+                                <div class="color-preview" style="background-color: <?= e(safe_color($team['team_color'])) ?>"></div>
                                 
                                 <div class="team-card-info">
                                     <h3 style="margin: 0; color: #ffffff;">
@@ -258,12 +263,12 @@ $teams = $stmt->fetchAll();
                                            min="0" style="width: 70px;" title="Ordre d'affichage">
                                     
                                     <button type="button" class="btn btn-outline btn-sm" 
-                                            onclick="showEditForm(<?= $team['id'] ?>, '<?= htmlspecialchars($team['team_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($team['team_color']) ?>', <?= $team['max_players'] ?>)">
+                                            onclick="showEditForm(<?= (int)$team['id'] ?>, <?= e(json_encode($team['team_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)) ?>, <?= e(json_encode(safe_color($team['team_color']))) ?>, <?= (int)$team['max_players'] ?>)">
                                         <?= icon('edit') ?> Modifier
                                     </button>
                                     
                                     <button type="button" class="btn btn-danger btn-sm"
-                                            onclick="deleteTeam(<?= $team['id'] ?>, '<?= htmlspecialchars($team['team_name'], ENT_QUOTES) ?>')">
+                                            onclick="deleteTeam(<?= (int)$team['id'] ?>, <?= e(json_encode($team['team_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)) ?>)">
                                         <?= icon('trash') ?> Supprimer
                                     </button>
                                 </div>

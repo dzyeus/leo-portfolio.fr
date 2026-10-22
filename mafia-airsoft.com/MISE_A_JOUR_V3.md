@@ -1,4 +1,4 @@
-# Mise à jour v3 – Comptes, paiements Stripe et billets
+# Mises à jour v3 et v4 – Comptes, paiements Stripe, billets, sécurité et conditions
 
 Cette version refait le système de comptes, ajoute le paiement des parties par Stripe
 (plusieurs places par achat, avec invités) et remplace l'ancien système de billets QR.
@@ -47,6 +47,36 @@ Le style du site (CSS, header, footer, pages publiques) n'a pas changé.
    - Copier la clé de signature (`whsec_...`) dans `config/app.php`.
 7. **Tester** : créer une partie à 10 €, réserver 2 places, payer avec la carte `4242 4242 4242 4242`
    (date future, CVC quelconque), compléter l'invité, télécharger billets et reçu, scanner un billet.
+
+## Mise à jour v4 – Sécurité, conditions générales et alertes
+
+**Sécurité de tout le site**
+- Protection CSRF automatique sur **tous** les formulaires (admin compris), en-têtes de sécurité (CSP, anti-clickjacking…),
+  redirection HTTPS, session revérifiée à chaque page (compte supprimé ou droits retirés = effet immédiat).
+- Uploads (galerie, blog, photos) : le contenu est vérifié comme vraie image, noms aléatoires, et aucun script ne peut
+  s'exécuter dans `uploads/`. Suppressions de fichiers limitées aux dossiers d'uploads.
+- Dossiers internes bloqués depuis le navigateur : `config/`, `database/`, `vendor/`, `includes/lib/`, fichiers `.md`, `.sql`…
+- Polices Rajdhani et Orbitron hébergées sur le site (plus d'appel à Google Fonts, apparence identique).
+- Erreurs PHP jamais affichées aux visiteurs en production (`APP_DEBUG` = false).
+
+**Conditions (paiement en ligne)**
+- Pages `cgv.php` (conditions générales de vente et de participation), `mentions-legales.php`, `confidentialite.php` (RGPD), liées dans le pied de page.
+- Case à cocher obligatoire à l'inscription et à chaque réservation, avec mention de l'absence de droit de rétractation
+  (art. L221-28 12° du Code de la consommation). La date et la version acceptées sont enregistrées.
+- Dans « Mon profil » : télécharger ses données (JSON) et supprimer son compte (les reçus restent archivés).
+
+**Alertes nouvelles parties**
+- Case « Me prévenir par email… » à l'inscription et dans « Mon profil » (désactivée par défaut).
+- À la création d'une partie, case « Prévenir les joueurs abonnés » ; ou plus tard depuis « Modifier la partie ».
+- Chaque email contient un lien de désabonnement (et le désabonnement en un clic de Gmail/Outlook).
+
+**Installation v4**
+1. phpMyAdmin → SQL → exécuter `database/update_v4_conditions_alertes.sql` (après la v3).
+2. Ajouter dans `config/app.php` les nouvelles lignes de `config/app.example.php` :
+   `APP_DEBUG`, `ASSO_PHONE`, `ASSO_PUBLICATION_DIRECTOR`, `CANCEL_REFUND_DAYS`, `ADULT_AGE`, `TERMS_VERSION`, `APP_SECRET`.
+3. **Relire et adapter `cgv.php`** (politique d'annulation, âge, règles) : c'est un modèle, à faire valider par le bureau de l'asso.
+4. Le fichier `.htaccess` racine force désormais le HTTPS et suppose que le site est à la racine du domaine
+   (`ErrorDocument 404 /404.php`). Si le site est dans un sous-dossier, adapter cette ligne.
 
 ## Passage en paiement réel
 

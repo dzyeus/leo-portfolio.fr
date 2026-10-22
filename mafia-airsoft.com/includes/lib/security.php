@@ -226,3 +226,54 @@ function safe_return_url(?string $url, string $default): string
     }
     return $url;
 }
+
+// ---------------------------------------------------------------------
+// Fichiers envoyés (images)
+// ---------------------------------------------------------------------
+
+/**
+ * Vérifie qu'un fichier envoyé est une vraie image (contenu analysé, pas
+ * seulement l'extension). Renvoie l'extension sûre à utiliser, ou null.
+ */
+function uploaded_image_extension(array $file, int $maxBytes = 5242880): ?string
+{
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+        return null;
+    }
+    if ($file['size'] <= 0 || $file['size'] > $maxBytes) {
+        return null;
+    }
+    $info = @getimagesize($file['tmp_name']);
+    $types = [
+        IMAGETYPE_JPEG => 'jpg',
+        IMAGETYPE_PNG  => 'png',
+        IMAGETYPE_GIF  => 'gif',
+        IMAGETYPE_WEBP => 'webp',
+    ];
+    return ($info && isset($types[$info[2]])) ? $types[$info[2]] : null;
+}
+
+/** Nom de fichier aléatoire et sûr pour un upload. */
+function random_upload_name(string $prefix, string $extension): string
+{
+    return $prefix . '_' . bin2hex(random_bytes(12)) . '.' . $extension;
+}
+
+/** Supprime un fichier uniquement s'il est bien dans le dossier d'uploads attendu. */
+function delete_upload(string $relativePath, string $allowedDir): void
+{
+    $relativePath = ltrim(str_replace('\\', '/', $relativePath), '/');
+    if (strpos($relativePath, $allowedDir) !== 0 || str_contains($relativePath, '..')) {
+        return;
+    }
+    $full = MAT_ROOT . '/' . $relativePath;
+    if (is_file($full)) {
+        @unlink($full);
+    }
+}
+
+/** Couleur hexadécimale valide (#rrggbb), sinon la couleur par défaut. */
+function safe_color(?string $color, string $default = '#a3a3a3'): string
+{
+    return (is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/', $color)) ? $color : $default;
+}

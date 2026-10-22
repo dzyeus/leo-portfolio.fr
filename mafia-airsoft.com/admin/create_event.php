@@ -54,6 +54,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($default_teams as $team) {
                 $stmt->execute(array_merge([$new_event_id], $team));
             }
+
+            // Alerte email aux joueurs abonnés (si demandé)
+            if (!empty($_POST['announce'])) {
+                $sent = announce_event($pdo, (int)$new_event_id);
+                flash_set('success', 'Partie créée. Annonce envoyée à ' . $sent . ' joueur(s) abonné(s).');
+            } else {
+                $pdo->prepare("UPDATE events SET announced_at = NULL WHERE id = ?")->execute([$new_event_id]);
+            }
             
             header('Location: manage_teams.php?event_id=' . $new_event_id . '&created=1');
             exit;
@@ -158,6 +166,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                <?= (isset($_POST['registration_open']) || !isset($_POST['title'])) ? 'checked' : '' ?>>
                         <label for="registration_open">Inscriptions ouvertes</label>
                     </div>
+
+                    <div class="form-group-checkbox">
+                        <input type="checkbox" id="announce" name="announce" value="1"
+                               <?= (isset($_POST['announce']) || !isset($_POST['title'])) ? 'checked' : '' ?>>
+                        <label for="announce">Prévenir par email les joueurs abonnés aux alertes (<?= subscribers_count($pdo) ?> abonné(s))</label>
+                    </div>
+                    <small style="color:#a3a3a3;">Astuce : décoche si tu veux d'abord configurer les équipes, puis envoie l'annonce depuis « Modifier la partie ».</small>
                     
                     <div class="alert" style="background: rgba(220, 38, 38, 0.1); border-left: 3px solid var(--primary); padding: var(--spacing-md); margin-top: var(--spacing-md);">
                         <strong>ℹ️ Note :</strong> Après la création, vous pourrez configurer les équipes (noms, couleurs, limites) pour cette partie.

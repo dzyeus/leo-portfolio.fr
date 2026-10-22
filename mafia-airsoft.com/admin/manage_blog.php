@@ -39,17 +39,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 mkdir($upload_dir, 0755, true);
             }
             
-            $file_extension = strtolower(pathinfo($_FILES['featured_image_file']['name'], PATHINFO_EXTENSION));
-            $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            $file_extension = uploaded_image_extension($_FILES['featured_image_file']);
             
-            if (in_array($file_extension, $allowed_extensions)) {
-                $new_filename = 'blog_' . time() . '_' . uniqid() . '.' . $file_extension;
+            if ($file_extension !== null) {
+                $new_filename = random_upload_name('blog', $file_extension);
                 $upload_path = $upload_dir . $new_filename;
                 
                 if (move_uploaded_file($_FILES['featured_image_file']['tmp_name'], $upload_path)) {
                     // Supprimer l'ancienne image si c'est une mise à jour et qu'elle existe
-                    if ($action === 'update' && !empty($edit_post['featured_image']) && file_exists('../' . $edit_post['featured_image'])) {
-                        unlink('../' . $edit_post['featured_image']);
+                    if ($action === 'update' && !empty($edit_post['featured_image'])) {
+                        delete_upload($edit_post['featured_image'], 'uploads/blog/');
                     }
                     $featured_image = 'uploads/blog/' . $new_filename;
                 } else {
@@ -60,8 +59,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // Générer le slug
-        $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $title)));
+        // Image à la une : uniquement un fichier du blog ou une adresse https
+        if ($featured_image !== '' && !preg_match('#^uploads/blog/[A-Za-z0-9_.-]+$#', $featured_image)
+            && !preg_match('#^https://[^\s"\'<>]+$#', $featured_image)) {
+            $featured_image = '';
+            $error = 'Image à la une invalide : utilise un fichier envoyé ou une adresse https://';
+        }
+
+        // Générer le slug (accents convertis : "Opération" → "operation") et le rendre unique
+        $slug_base = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $title);
+        $slug_base = trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($slug_base ?: $title)), '-') ?: 'article';
+        $slug = $slug_base;
+        $current_id = ($action === 'update') ? (int)($_POST['post_id'] ?? 0) : 0;
+        for ($n = 2; ; $n++) {
+            $stmt_slug = $pdo->prepare("SELECT id FROM blog_posts WHERE slug = ? AND id <> ?");
+            $stmt_slug->execute([$slug, $current_id]);
+            if (!$stmt_slug->fetch()) {
+                break;
+            }
+            $slug = $slug_base . '-' . $n;
+        }
         
         if (empty($title) || empty($content)) {
             $error = 'Le titre et le contenu sont obligatoires.';
@@ -82,11 +99,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         foreach ($_FILES['gallery_images']['tmp_name'] as $key => $tmp_name) {
                             if ($_FILES['gallery_images']['error'][$key] === UPLOAD_ERR_OK) {
-                                $file_extension = strtolower(pathinfo($_FILES['gallery_images']['name'][$key], PATHINFO_EXTENSION));
-                                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                                $file_extension = uploaded_image_extension([
+                                    'error' => $_FILES['gallery_images']['error'][$key],
+                                    'tmp_name' => $tmp_name,
+                                    'size' => $_FILES['gallery_images']['size'][$key],
+                                ]);
                                 
-                                if (in_array($file_extension, $allowed_extensions)) {
-                                    $new_filename = 'gallery_' . time() . '_' . uniqid() . '.' . $file_extension;
+                                if ($file_extension !== null) {
+                                    $new_filename = random_upload_name('gallery', $file_extension);
                                     $upload_path = $upload_dir . $new_filename;
                                     
                                     if (move_uploaded_file($tmp_name, $upload_path)) {
@@ -108,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Erreur lors de la création.';
                 }
             } else {
-                $post_id = $_POST['post_id'];
+                $post_id = (int)$_POST['post_id'];
                 $published_at = $is_published && !$edit_post['is_published'] ? date('Y-m-d H:i:s') : $edit_post['published_at'];
                 
                 $stmt = $pdo->prepare("
@@ -128,11 +148,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         foreach ($_FILES['gallery_images']['tmp_name'] as $key => $tmp_name) {
                             if ($_FILES['gallery_images']['error'][$key] === UPLOAD_ERR_OK) {
-                                $file_extension = strtolower(pathinfo($_FILES['gallery_images']['name'][$key], PATHINFO_EXTENSION));
-                                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                                $file_extension = uploaded_image_extension([
+                                    'error' => $_FILES['gallery_images']['error'][$key],
+                                    'tmp_name' => $tmp_name,
+                                    'size' => $_FILES['gallery_images']['size'][$key],
+                                ]);
                                 
-                                if (in_array($file_extension, $allowed_extensions)) {
-                                    $new_filename = 'gallery_' . time() . '_' . uniqid() . '.' . $file_extension;
+                                if ($file_extension !== null) {
+                                    $new_filename = random_upload_name('gallery', $file_extension);
                                     $upload_path = $upload_dir . $new_filename;
                                     
                                     if (move_uploaded_file($tmp_name, $upload_path)) {
@@ -174,10 +197,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Supprimer l'image de la base de données
             $stmt = $pdo->prepare("DELETE FROM blog_gallery WHERE id = ?");
             if ($stmt->execute([$image_id])) {
-                // Supprimer le fichier physique
-                if (file_exists('../' . $image['image_path'])) {
-                    unlink('../' . $image['image_path']);
-                }
+                // Supprimer le fichier physique (uniquement dans uploads/blog/)
+                delete_upload($image['image_path'], 'uploads/blog/');
                 $message = 'Image supprimée de la galerie !';
             }
         }
@@ -368,7 +389,7 @@ $posts = $stmt->fetchAll();
                                     </td>
                                     <td class="table-actions">
                                         <?php if ($post['is_published']): ?>
-                                            <a href="../blog_post.php?slug=<?= $post['slug'] ?>" class="btn-action" target="_blank" title="Voir"><?= icon('eye') ?></a>
+                                            <a href="../blog_post.php?slug=<?= urlencode($post['slug']) ?>" class="btn-action" target="_blank" title="Voir"><?= icon('eye') ?></a>
                                         <?php endif; ?>
                                         <a href="?edit=<?= $post['id'] ?>" class="btn-action" title="Modifier"><?= icon('edit') ?></a>
                                         <form method="POST" style="display:inline;" onsubmit="return confirm('Supprimer cet article ?');">

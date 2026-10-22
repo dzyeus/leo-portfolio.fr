@@ -15,6 +15,7 @@ uploads/gallery/*
 uploads/blog/*
 
 # Conserver les dossiers mais pas les fichiers
+!uploads/.htaccess
 !uploads/tickets/.gitkeep
 !uploads/tickets/.htaccess
 !uploads/qrcodes/.gitkeep

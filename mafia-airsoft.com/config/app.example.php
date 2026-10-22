@@ -13,6 +13,8 @@
 // URL publique du site, sans "/" à la fin (sert aux liens dans les emails et pour Stripe)
 define('SITE_URL', 'https://mafia-airsoft.com');
 define('SITE_NAME', 'Mafia Airsoft Team');
+// true seulement en local pour voir les erreurs PHP ; toujours false en ligne
+define('APP_DEBUG', false);
 
 // ---------------------------------------------------------------------
 // Association (affiché sur les reçus de paiement)
@@ -22,9 +24,30 @@ define('ASSO_ADDRESS', "Adresse du siège\n63000 Ville");
 define('ASSO_RNA', 'W000000000');          // N° RNA (récépissé de préfecture)
 define('ASSO_SIRET', '');                   // Laisser vide si pas encore de SIRET
 define('ASSO_EMAIL', 'contact@mafia-airsoft.com');
+define('ASSO_PHONE', '06 80 85 08 46');
+// Directeur de la publication (mentions légales) : en général le président de l'asso
+define('ASSO_PUBLICATION_DIRECTOR', 'Prénom NOM, président');
 // Mention TVA : une association non lucrative est en général exonérée.
 // Vérifie la mention exacte qui s'applique à votre asso.
 define('ASSO_VAT_MENTION', 'TVA non applicable, article 261-7-1° du CGI');
+
+// ---------------------------------------------------------------------
+// Conditions générales
+// ---------------------------------------------------------------------
+// Annulation par le joueur : remboursement intégral si la demande arrive au moins
+// ce nombre de jours avant la partie (0 = jamais de remboursement à la demande du joueur)
+define('CANCEL_REFUND_DAYS', 7);
+// Âge minimum pour participer sans autorisation parentale
+define('ADULT_AGE', 18);
+// Date de la version des conditions : à changer quand tu modifies les CGV
+define('TERMS_VERSION', '2026-10-22');
+
+// ---------------------------------------------------------------------
+// Sécurité
+// ---------------------------------------------------------------------
+// Clé secrète du site (liens de désabonnement…) : mets une longue chaîne aléatoire,
+// par exemple générée sur https://www.random.org/strings/ (64 caractères)
+define('APP_SECRET', 'A_REMPLACER_par_une_longue_chaine_aleatoire');
 
 // ---------------------------------------------------------------------
 // Stripe  (Dashboard Stripe > Développeurs)

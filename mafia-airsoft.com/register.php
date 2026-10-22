@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Les deux mots de passe ne correspondent pas.';
     }
     if (empty($_POST['accept_rules'])) {
-        $errors[] = 'Tu dois accepter les règles de sécurité des parties.';
+        $errors[] = 'Tu dois accepter les conditions générales, la politique de confidentialité et les règles de sécurité.';
     }
 
     if (!$errors) {
@@ -69,12 +69,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$errors) {
         rate_limit_hit($pdo, 'register', client_ip());
         $stmt = $pdo->prepare("
-            INSERT INTO users (pseudo, first_name, last_name, email, password_hash, phone, is_admin)
-            VALUES (?, ?, ?, ?, ?, ?, 0)
+            INSERT INTO users (pseudo, first_name, last_name, email, password_hash, phone, is_admin,
+                               terms_accepted_at, terms_version, notify_new_events)
+            VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), ?, ?)
         ");
         $stmt->execute([
             $form['pseudo'], $form['first_name'], $form['last_name'], $form['email'],
             password_hash($password, PASSWORD_DEFAULT), $form['phone'] ?: null,
+            TERMS_VERSION, !empty($_POST['notify_new_events']) ? 1 : 0,
         ]);
         $user = ['id' => (int)$pdo->lastInsertId(), 'pseudo' => $form['pseudo'], 'email' => $form['email']];
 
@@ -173,8 +175,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
 
                     <div class="form-group-checkbox">
-                        <input type="checkbox" id="accept_rules" name="accept_rules" value="1" <?= !empty($_POST['accept_rules']) ? 'checked' : '' ?>>
-                        <label for="accept_rules">Je m'engage à respecter les règles de sécurité (protection oculaire obligatoire) et le fair-play.</label>
+                        <input type="checkbox" id="notify_new_events" name="notify_new_events" value="1" <?= !empty($_POST['notify_new_events']) ? 'checked' : '' ?>>
+                        <label for="notify_new_events">Me prévenir par email quand une nouvelle partie est ouverte aux inscriptions (désactivable à tout moment).</label>
+                    </div>
+
+                    <div class="form-group-checkbox">
+                        <input type="checkbox" id="accept_rules" name="accept_rules" value="1" required <?= !empty($_POST['accept_rules']) ? 'checked' : '' ?>>
+                        <label for="accept_rules">J'accepte les <a href="cgv.php" target="_blank">conditions générales</a> et la
+                            <a href="confidentialite.php" target="_blank">politique de confidentialité</a>, et je m'engage à respecter
+                            les règles de sécurité (protection oculaire obligatoire) et le fair-play. *</label>
                     </div>
 
                     <button type="submit" class="btn btn-primary">Créer mon compte</button>
