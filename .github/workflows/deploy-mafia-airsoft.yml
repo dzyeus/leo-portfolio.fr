@@ -2,7 +2,8 @@
 #
 # Lancement MANUEL uniquement : GitHub > Actions > « Déployer mafia-airsoft.com » > Run workflow.
 # Les identifiants FTP sont des « secrets » GitHub (Settings > Secrets and variables > Actions) :
-#   O2SWITCH_FTP_SERVER    nom du serveur o2switch (cPanel, colonne de droite « Nom du serveur », ex. xxxx.o2switch.net)
+#   O2SWITCH_FTP_SERVER    serveur FTP : ftp.mafia-airsoft.com (cPanel > Comptes FTP > « Configurer le client FTP »)
+#                          ou le nom complet du serveur o2switch (xxxx.o2switch.net). Sans https://, sans port.
 #   O2SWITCH_FTP_USERNAME  compte FTP dédié au site (cPanel > Comptes FTP), ex. deploy@mafia-airsoft.com
 #   O2SWITCH_FTP_PASSWORD  mot de passe de ce compte FTP
 #   O2SWITCH_FTP_DIR       dossier du site vu par ce compte FTP, avec un / final (ex. ./ ou ./mafia-airsoft.com/)
@@ -35,10 +36,35 @@ jobs:
       - name: Vérifier la syntaxe PHP avant l'envoi
         run: find mafia-airsoft.com -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l > /dev/null
 
+      - name: Vérifier le nom du serveur FTP
+        env:
+          RAW_SERVER: ${{ secrets.O2SWITCH_FTP_SERVER }}
+        run: |
+          # Nettoyage : retire https://, ftp://, un port (:21, :2083…), un chemin, les espaces
+          host=$(printf '%s' "$RAW_SERVER" | tr -d '[:space:]' | sed -E 's#^[A-Za-z]+://##; s#[:/].*$##')
+          if [ -z "$host" ]; then
+            echo "::error::Le secret O2SWITCH_FTP_SERVER est vide."
+            exit 1
+          fi
+          echo "::add-mask::$host"
+          if [ "$host" != "$RAW_SERVER" ]; then
+            echo "::warning::Le secret O2SWITCH_FTP_SERVER contenait https://, un port, un chemin ou des espaces : corrigé automatiquement."
+          fi
+          if ! getent hosts "$host" > /dev/null; then
+            case "$host" in
+              *.*) hint="Vérifie l'orthographe." ;;
+              *)   hint="Il manque la fin du nom : mets ftp.mafia-airsoft.com ou le nom complet xxxx.o2switch.net, pas seulement xxxx." ;;
+            esac
+            echo "::error::Le serveur indiqué dans O2SWITCH_FTP_SERVER est introuvable ($(printf '%s' "$host" | wc -c) caractères). $hint Valeur conseillée : ftp.mafia-airsoft.com"
+            exit 1
+          fi
+          echo "FTP_HOST=$host" >> "$GITHUB_ENV"
+          echo "Serveur FTP trouvé ✔"
+
       - name: Envoyer les fichiers modifiés sur o2switch
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.O2SWITCH_FTP_SERVER }}
+          server: ${{ env.FTP_HOST }}
           username: ${{ secrets.O2SWITCH_FTP_USERNAME }}
           password: ${{ secrets.O2SWITCH_FTP_PASSWORD }}
           protocol: ftps
