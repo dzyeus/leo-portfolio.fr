@@ -1,0 +1,56 @@
+# Déploiement de mafia-airsoft.com sur o2switch (FTPS)
+#
+# Lancement MANUEL uniquement : GitHub > Actions > « Déployer mafia-airsoft.com » > Run workflow.
+# Les identifiants FTP sont des « secrets » GitHub (Settings > Secrets and variables > Actions) :
+#   O2SWITCH_FTP_SERVER    nom du serveur o2switch (cPanel, colonne de droite « Nom du serveur », ex. xxxx.o2switch.net)
+#   O2SWITCH_FTP_USERNAME  compte FTP dédié au site (cPanel > Comptes FTP), ex. deploy@mafia-airsoft.com
+#   O2SWITCH_FTP_PASSWORD  mot de passe de ce compte FTP
+#   O2SWITCH_FTP_DIR       dossier du site vu par ce compte FTP, avec un / final (ex. ./ ou ./mafia-airsoft.com/)
+#
+# Jamais envoyés ni écrasés : config/app.php, config/database.php, vendor/, les photos déjà en ligne.
+name: Déployer mafia-airsoft.com
+
+on:
+  workflow_dispatch:
+    inputs:
+      sql_ok:
+        description: "J'ai exécuté dans phpMyAdmin les nouveaux scripts database/update_v*.sql"
+        type: boolean
+        default: false
+
+concurrency: deploy-mafia-airsoft
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Vérifier la confirmation
+        if: ${{ !inputs.sql_ok }}
+        run: |
+          echo "::error::Coche la case « J'ai exécuté les scripts SQL » avant de déployer."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Vérifier la syntaxe PHP avant l'envoi
+        run: find mafia-airsoft.com -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l > /dev/null
+
+      - name: Envoyer les fichiers modifiés sur o2switch
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.O2SWITCH_FTP_SERVER }}
+          username: ${{ secrets.O2SWITCH_FTP_USERNAME }}
+          password: ${{ secrets.O2SWITCH_FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./mafia-airsoft.com/
+          server-dir: ${{ secrets.O2SWITCH_FTP_DIR }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            vendor/**
+            config/app.php
+            config/database.php
+            qr-code/email_config.php
+            DEPLOYMENT.md
+            README.md
