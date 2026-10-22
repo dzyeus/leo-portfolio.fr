@@ -95,6 +95,10 @@ function check_line(bool $ok, string $label, string $detail = ''): void
                 <a href="index.php" class="btn btn-secondary">← Retour au dashboard</a>
             </div>
 
+            <?php if (preg_match('/^(sk|rk)_live_/', $key)): ?>
+                <div class="alert alert-warning">⚠️ Le site est configuré avec une clé Stripe LIVE : les réservations débitent de vraies cartes.</div>
+            <?php endif; ?>
+
             <section class="dashboard-section">
                 <h2>💳 Paiement Stripe</h2>
                 <ul class="check-list">
@@ -114,6 +118,13 @@ function check_line(bool $ok, string $label, string $detail = ''): void
                         <div class="alert alert-success" style="margin-top: var(--spacing-md);">
                             ✅ Stripe fonctionne (mode <?= e($stripeResult['mode']) ?>). Les réservations payantes peuvent démarrer.
                         </div>
+                        <?php if ($stripeResult['mode'] === 'LIVE'): ?>
+                            <div class="alert alert-warning">
+                                ⚠️ Clé <strong>LIVE</strong> : les paiements sont <strong>réels</strong> (vraies cartes débitées).
+                                Pour tester, utilise une clé <code>rk_test_…</code> ou <code>sk_test_…</code> créée dans
+                                l'environnement de test « Mafia Airsoft Team », avec le webhook de ce même environnement.
+                            </div>
+                        <?php endif; ?>
                     <?php else: ?>
                         <div class="alert alert-error" style="margin-top: var(--spacing-md);">❌ Stripe : <?= e($stripeResult['error']) ?></div>
                         <?php if ($stripeResult['hint']): ?>
