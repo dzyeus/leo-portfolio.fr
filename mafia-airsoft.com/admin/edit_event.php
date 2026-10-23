@@ -192,6 +192,10 @@ $event_time_only = date('H:i', strtotime($event['event_date']));
                     <a href="view_event.php?id=<?= $event_id ?>" class="btn btn-secondary btn-lg">Annuler</a>
                 </div>
             </form>
+
+            <div style="margin-top: var(--spacing-lg); text-align: right;">
+                <a href="delete_event.php?id=<?= $event_id ?>" class="btn btn-danger"><?= icon('trash') ?> Supprimer la partie</a>
+            </div>
         </div>
     </main>
 

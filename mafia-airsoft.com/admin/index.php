@@ -31,6 +31,10 @@ $total_registrations = $stmt->fetchColumn();
         <div class="admin-panel">
             <h1><?= icon('settings') ?> Espace Administration</h1>
 
+            <?php foreach (flash_get() as $flash): ?>
+                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
+            <?php endforeach; ?>
+
             <!-- Statistiques -->
             <section class="dashboard-section">
                 <h2><?= icon('stats') ?> Statistiques générales</h2>
@@ -122,8 +126,7 @@ $total_registrations = $stmt->fetchColumn();
                                         <td class="table-actions">
                                             <a href="view_event.php?id=<?= $event['id'] ?>" class="btn-icon" title="Voir"><?= icon('eye') ?></a>
                                             <a href="edit_event.php?id=<?= $event['id'] ?>" class="btn-icon" title="Modifier"><?= icon('edit') ?></a>
-                                            <a href="delete_event.php?id=<?= $event['id'] ?>" class="btn-icon" title="Supprimer" 
-                                               onclick="return confirm('\u00cates-vous s\u00fbr de vouloir supprimer cette partie ?')"><?= icon('trash') ?></a>
+                                            <a href="delete_event.php?id=<?= $event['id'] ?>" class="btn-icon" title="Supprimer la partie"><?= icon('trash') ?></a>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

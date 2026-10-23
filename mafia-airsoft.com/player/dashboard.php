@@ -4,6 +4,17 @@ require_once '../config/session.php';
 require_once '../config/team_helpers.php';
 requireLogin();
 
+// Case « Me prévenir des nouvelles parties »
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'notifications') {
+    $notify = !empty($_POST['notify_new_events']) ? 1 : 0;
+    $pdo->prepare("UPDATE users SET notify_new_events = ? WHERE id = ?")->execute([$notify, $_SESSION['user_id']]);
+    flash_set('success', $notify
+        ? '🔔 C\'est noté : tu recevras un email à chaque nouvelle partie ouverte aux inscriptions.'
+        : '🔕 Alertes désactivées : tu ne recevras plus d\'email pour les nouvelles parties.');
+    header('Location: dashboard.php');
+    exit;
+}
+
 // Récupérer les informations du joueur
 $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->execute([$_SESSION['user_id']]);
@@ -114,6 +125,21 @@ foreach ($registrations as $reg) {
                     </div>
                 </div>
                 <a href="profile.php" class="btn btn-secondary btn-sm" style="margin-top: var(--spacing-md);">Modifier mon profil / mot de passe</a>
+            </section>
+
+            <!-- Alertes nouvelles parties -->
+            <section class="dashboard-section">
+                <h2>🔔 Nouvelles parties</h2>
+                <form method="POST">
+                    <input type="hidden" name="action" value="notifications">
+                    <div class="form-group-checkbox">
+                        <input type="checkbox" id="notify_new_events" name="notify_new_events" value="1"
+                               <?= !empty($user['notify_new_events']) ? 'checked' : '' ?> onchange="this.form.submit()">
+                        <label for="notify_new_events">Me prévenir par email dès qu'une nouvelle partie est ouverte aux inscriptions</label>
+                    </div>
+                    <noscript><button type="submit" class="btn btn-secondary btn-sm">Enregistrer</button></noscript>
+                    <small style="color:#a3a3a3;">Tu peux changer d'avis à tout moment, et chaque email contient un lien de désabonnement.</small>
+                </form>
             </section>
 
             <!-- Statistiques -->

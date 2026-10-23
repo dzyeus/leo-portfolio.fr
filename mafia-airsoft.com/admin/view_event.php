@@ -78,6 +78,7 @@ $present_count = count(array_filter($registrations, fn($r) => !empty($r['scanned
                 <h1><?= icon('eye') ?> <?= htmlspecialchars($event['title']) ?></h1>
                 <div class="header-actions">
                     <a href="edit_event.php?id=<?= $event['id'] ?>" class="btn btn-primary"><?= icon('edit') ?> Modifier</a>
+                    <a href="delete_event.php?id=<?= $event['id'] ?>" class="btn btn-danger"><?= icon('trash') ?> Supprimer</a>
                     <a href="index.php" class="btn btn-secondary">← Retour</a>
                 </div>
             </div>
