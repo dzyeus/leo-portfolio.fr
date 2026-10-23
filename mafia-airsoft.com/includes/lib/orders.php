@@ -331,6 +331,9 @@ function order_sync_with_stripe(PDO $pdo, array $order): array
 function order_complete_from_stripe(PDO $pdo, array $session): void
 {
     $orderId = (int)($session['client_reference_id'] ?? 0);
+    if ($orderId <= 0) {
+        return; // paiement qui ne vient pas du site (lien de paiement, boutique…) : rien à faire
+    }
     $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ? AND stripe_session_id = ?");
     $stmt->execute([$orderId, $session['id'] ?? '']);
     $order = $stmt->fetch(PDO::FETCH_ASSOC);
