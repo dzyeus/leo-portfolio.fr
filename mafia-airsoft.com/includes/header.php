@@ -12,6 +12,12 @@ if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
 } elseif (strpos($_SERVER['PHP_SELF'], '/qr-code/') !== false) {
     $base_path = '../';
 }
+// Pages du panel administrateur (admin/ et billets)
+$is_admin_area = $is_admin_user && (strpos($_SERVER['PHP_SELF'], '/admin/') !== false
+    || strpos($_SERVER['PHP_SELF'], '/qr-code/') !== false);
+if ($is_admin_user) {
+    require_once __DIR__ . '/admin_ui.php';
+}
 ?>
 <header class="site-header">
     <nav class="navbar">
@@ -29,16 +35,11 @@ if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
             <button class="nav-toggle" id="navToggle">☰</button>
             
             <ul class="nav-menu" id="navMenu">
+                <li><a href="<?= $base_path ?>index.php" class="<?= $current_page === 'index.php' && !$is_admin_area ? 'active' : '' ?>">Accueil</a></li>
+                <li><a href="<?= $base_path ?>events.php" class="<?= $current_page === 'events.php' && !$is_admin_area ? 'active' : '' ?>">Parties</a></li>
+                <li><a href="<?= $base_path ?>blog.php" class="<?= $current_page === 'blog.php' ? 'active' : '' ?>">Blog</a></li>
                 <?php if ($is_admin_user): ?>
-                    <li><a href="<?= $base_path ?>admin/index.php" class="<?= $current_page === 'index.php' ? 'active' : '' ?>">Dashboard</a></li>
-                    <li><a href="<?= $base_path ?>admin/create_event.php" class="<?= $current_page === 'create_event.php' ? 'active' : '' ?>">Créer une partie</a></li>
-                    <li><a href="<?= $base_path ?>admin/players.php" class="<?= $current_page === 'players.php' ? 'active' : '' ?>">Joueurs</a></li>
-                    <li><a href="<?= $base_path ?>admin/manage_blog.php" class="<?= $current_page === 'manage_blog.php' ? 'active' : '' ?>">Blog</a></li>
-                    <li><a href="<?= $base_path ?>events.php">Voir le site</a></li>
-                <?php else: ?>
-                    <li><a href="<?= $base_path ?>index.php" class="<?= $current_page === 'index.php' ? 'active' : '' ?>">Accueil</a></li>
-                    <li><a href="<?= $base_path ?>events.php" class="<?= $current_page === 'events.php' ? 'active' : '' ?>">Parties</a></li>
-                    <li><a href="<?= $base_path ?>blog.php" class="<?= $current_page === 'blog.php' ? 'active' : '' ?>">Blog</a></li>
+                    <li><a href="<?= $base_path ?>admin/index.php" class="<?= $is_admin_area ? 'active' : '' ?>">Panel admin</a></li>
                 <?php endif; ?>
                 
                 <?php if ($is_logged_in): ?>
@@ -57,3 +58,4 @@ if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
         </div>
     </nav>
 </header>
+<?php if ($is_admin_area) { admin_render_nav($base_path); } ?>

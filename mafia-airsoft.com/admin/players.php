@@ -1,300 +1,328 @@
 <?php
+/**
+ * Panel admin – Joueurs
+ * Recherche, filtres (à confirmer, abonnés, admins), validation d'email,
+ * droits administrateur, photo, suppression, ajout manuel d'un joueur.
+ */
 require_once '../config/database.php';
 require_once '../config/session.php';
+require_once '../config/team_helpers.php';
+require_once '../includes/admin_ui.php';
 requireAdmin();
 
-$message = '';
-$error = '';
+$filter = (string)($_GET['filter'] ?? 'all');
+$q = trim((string)($_GET['q'] ?? ''));
+$backUrl = 'players.php?' . http_build_query(array_filter(['filter' => $filter !== 'all' ? $filter : null, 'q' => $q ?: null]));
+$addError = '';
+$addForm = [];
 
-// Gestion de l'ajout d'un nouveau joueur
+// ---------- Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    require_csrf();
     $action = $_POST['action'];
-    
+    $userId = (int)($_POST['user_id'] ?? 0);
+    $me = current_user_id();
+
     if ($action === 'add_player') {
-        $pseudo = trim($_POST['pseudo'] ?? '');
-        $first_name = trim($_POST['first_name'] ?? '');
-        $last_name = trim($_POST['last_name'] ?? '');
-        $email = trim($_POST['email'] ?? '');
+        $addForm = [
+            'pseudo'     => trim($_POST['pseudo'] ?? ''),
+            'first_name' => trim($_POST['first_name'] ?? ''),
+            'last_name'  => trim($_POST['last_name'] ?? ''),
+            'email'      => trim($_POST['email'] ?? ''),
+            'phone'      => trim($_POST['phone'] ?? ''),
+        ];
         $password = $_POST['password'] ?? '';
-        $phone = trim($_POST['phone'] ?? '');
-        
-        if (empty($pseudo) || empty($first_name) || empty($last_name) || empty($email) || empty($password)) {
-            $error = 'Pseudo, prénom, nom, email et mot de passe sont obligatoires.';
-        } elseif ($problem = pseudo_problem($pseudo)) {
-            $error = $problem;
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $error = 'Email invalide.';
+
+        if (in_array('', [$addForm['pseudo'], $addForm['first_name'], $addForm['last_name'], $addForm['email']], true) || $password === '') {
+            $addError = 'Pseudo, prénom, nom, email et mot de passe sont obligatoires.';
+        } elseif ($problem = pseudo_problem($addForm['pseudo'])) {
+            $addError = $problem;
+        } elseif (!filter_var($addForm['email'], FILTER_VALIDATE_EMAIL)) {
+            $addError = 'Email invalide.';
         } elseif ($problem = password_problem($password)) {
-            $error = $problem;
+            $addError = $problem;
         } else {
-            // Vérifier si l'email ou pseudo existe déjà
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? OR pseudo = ?");
-            $stmt->execute([$email, $pseudo]);
-            
+            $stmt->execute([$addForm['email'], $addForm['pseudo']]);
             if ($stmt->fetch()) {
-                $error = 'Cet email ou pseudo est déjà utilisé.';
+                $addError = 'Cet email ou ce pseudo est déjà utilisé.';
+            }
+        }
+
+        if ($addError === '') {
+            $picture = null;
+            if (!empty($_FILES['profile_picture']['name']) && ($ext = uploaded_image_extension($_FILES['profile_picture'], 3 * 1024 * 1024))) {
+                $name = random_upload_name('profile', $ext);
+                if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], MAT_ROOT . '/uploads/profiles/' . $name)) {
+                    $picture = 'uploads/profiles/' . $name;
+                }
+            }
+            // Compte créé par un admin : email considéré comme vérifié
+            $pdo->prepare("
+                INSERT INTO users (pseudo, first_name, last_name, email, email_verified_at, password_hash, phone, profile_picture)
+                VALUES (?, ?, ?, ?, NOW(), ?, ?, ?)
+            ")->execute([$addForm['pseudo'], $addForm['first_name'], $addForm['last_name'], $addForm['email'],
+                         password_hash($password, PASSWORD_DEFAULT), $addForm['phone'] ?: null, $picture]);
+            flash_set('success', 'Joueur « ' . $addForm['pseudo'] . ' » ajouté.');
+            header('Location: ' . $backUrl);
+            exit;
+        }
+    } else {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->execute([$userId]);
+        $target = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$target) {
+            flash_set('error', 'Joueur introuvable.');
+        } elseif ($action === 'verify_email') {
+            $pdo->prepare("UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ?")->execute([$userId]);
+            flash_set('success', 'Email de ' . $target['pseudo'] . ' validé : il peut se connecter.');
+        } elseif ($action === 'resend_verification') {
+            if (!empty($target['email_verified_at'])) {
+                flash_set('info', 'Ce compte est déjà confirmé.');
+            } elseif (send_verification_email($pdo, $target)) {
+                flash_set('success', 'Email de confirmation renvoyé à ' . $target['email'] . '.');
             } else {
-                // Gestion de l'upload de la photo
-                $profile_picture = null;
-                if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === 0) {
-                    $allowed = ['jpg', 'jpeg', 'png', 'gif'];
-                    $filename = $_FILES['profile_picture']['name'];
-                    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-                    
-                    if (in_array($ext, $allowed) && @getimagesize($_FILES['profile_picture']['tmp_name']) !== false) {
-                        $new_filename = bin2hex(random_bytes(12)) . '.' . $ext;
-                        $upload_path = '../uploads/profiles/' . $new_filename;
-                        
-                        if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
-                            $profile_picture = 'uploads/profiles/' . $new_filename;
-                        }
+                flash_set('error', 'L\'email n\'a pas pu partir. Va dans Diagnostic pour voir pourquoi.');
+            }
+        } elseif ($action === 'update_picture') {
+            $ext = uploaded_image_extension($_FILES['profile_picture'] ?? [], 3 * 1024 * 1024);
+            if (!$ext) {
+                flash_set('error', 'Image invalide (JPG, PNG, GIF ou WEBP, 3 Mo max).');
+            } else {
+                $name = random_upload_name('profile', $ext);
+                if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], MAT_ROOT . '/uploads/profiles/' . $name)) {
+                    if (!empty($target['profile_picture'])) {
+                        delete_upload($target['profile_picture'], 'uploads/profiles/');
                     }
-                }
-                
-                $password_hash = password_hash($password, PASSWORD_DEFAULT);
-                // Compte créé par un admin : email considéré comme vérifié
-                $stmt = $pdo->prepare("INSERT INTO users (pseudo, first_name, last_name, email, email_verified_at, password_hash, phone, profile_picture) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?)");
-                
-                if ($stmt->execute([$pseudo, $first_name, $last_name, $email, $password_hash, $phone ?: null, $profile_picture])) {
-                    $message = 'Joueur ajouté avec succès !';
-                } else {
-                    $error = 'Erreur lors de l\'ajout du joueur.';
+                    $pdo->prepare("UPDATE users SET profile_picture = ? WHERE id = ?")->execute(['uploads/profiles/' . $name, $userId]);
+                    flash_set('success', 'Photo de ' . $target['pseudo'] . ' mise à jour.');
                 }
             }
-        }
-    } elseif ($action === 'update_picture') {
-        $user_id = $_POST['user_id'];
-        
-        if (isset($_FILES['profile_picture']) && $_FILES['profile_picture']['error'] === 0) {
-            $allowed = ['jpg', 'jpeg', 'png', 'gif'];
-            $filename = $_FILES['profile_picture']['name'];
-            $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-            
-            if (in_array($ext, $allowed) && @getimagesize($_FILES['profile_picture']['tmp_name']) !== false) {
-                // Supprimer l'ancienne photo
-                $stmt = $pdo->prepare("SELECT profile_picture FROM users WHERE id = ?");
-                $stmt->execute([$user_id]);
-                $old_picture = $stmt->fetchColumn();
-                if ($old_picture && strpos($old_picture, 'uploads/profiles/') === 0 && file_exists('../' . $old_picture)) {
-                    unlink('../' . $old_picture);
-                }
-                
-                $new_filename = bin2hex(random_bytes(12)) . '.' . $ext;
-                $upload_path = '../uploads/profiles/' . $new_filename;
-                
-                if (move_uploaded_file($_FILES['profile_picture']['tmp_name'], $upload_path)) {
-                    $profile_picture = 'uploads/profiles/' . $new_filename;
-                    $stmt = $pdo->prepare("UPDATE users SET profile_picture = ? WHERE id = ?");
-                    if ($stmt->execute([$profile_picture, $user_id])) {
-                        $message = 'Photo de profil mise à jour !';
-                    }
-                }
+        } elseif ($action === 'toggle_admin') {
+            $admins = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE is_admin = 1")->fetchColumn();
+            if ($userId === $me) {
+                flash_set('error', 'Tu ne peux pas modifier tes propres droits.');
+            } elseif ((int)$target['is_admin'] === 1 && $admins <= 1) {
+                flash_set('error', 'Il doit rester au moins un administrateur.');
             } else {
-                $error = 'Format de fichier non autorisé. Utilisez JPG, PNG ou GIF.';
+                $new = (int)$target['is_admin'] === 1 ? 0 : 1;
+                $pdo->prepare("UPDATE users SET is_admin = ? WHERE id = ?")->execute([$new, $userId]);
+                flash_set('success', $new
+                    ? $target['pseudo'] . ' est maintenant administrateur (accès au panel et au scanner).'
+                    : $target['pseudo'] . ' n\'est plus administrateur.');
             }
-        }
-    } elseif ($action === 'verify_email') {
-        // Validation manuelle (le joueur n'a pas reçu ou trouvé l'email de confirmation)
-        $stmt = $pdo->prepare("UPDATE users SET email_verified_at = NOW() WHERE id = ? AND email_verified_at IS NULL");
-        $stmt->execute([(int)$_POST['user_id']]);
-        $message = $stmt->rowCount() ? 'Email validé : le joueur peut se connecter.' : 'Ce compte était déjà validé.';
-    } elseif ($action === 'resend_verification') {
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? AND email_verified_at IS NULL");
-        $stmt->execute([(int)$_POST['user_id']]);
-        if ($target = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            if (send_verification_email($pdo, $target)) {
-                $message = 'Email de confirmation renvoyé à ' . $target['email'] . '.';
+        } elseif ($action === 'delete_player') {
+            if ((int)$target['is_admin'] === 1) {
+                flash_set('error', 'Retire d\'abord les droits administrateur avant de supprimer ce compte.');
             } else {
-                $error = 'L\'email n\'a pas pu partir. Va dans Admin › Diagnostic pour voir pourquoi.';
+                if (!empty($target['profile_picture'])) {
+                    delete_upload($target['profile_picture'], 'uploads/profiles/');
+                }
+                $pdo->prepare("DELETE FROM users WHERE id = ? AND is_admin = 0")->execute([$userId]);
+                flash_set('success', 'Compte de ' . $target['pseudo'] . ' supprimé (ses reçus de paiement restent archivés).');
             }
         }
-    } elseif ($action === 'delete_player') {
-        $user_id = $_POST['user_id'];
-        
-        // Supprimer la photo de profil si elle existe
-        $stmt = $pdo->prepare("SELECT profile_picture FROM users WHERE id = ?");
-        $stmt->execute([$user_id]);
-        $picture = $stmt->fetchColumn();
-        if ($picture && strpos($picture, 'uploads/profiles/') === 0 && file_exists('../' . $picture)) {
-            unlink('../' . $picture);
-        }
-        
-        $stmt = $pdo->prepare("DELETE FROM users WHERE id = ? AND is_admin = 0");
-        if ($stmt->execute([$user_id])) {
-            $message = 'Joueur supprimé.';
-        }
+        header('Location: ' . $backUrl);
+        exit;
     }
 }
 
-// Récupérer tous les joueurs
-$stmt = $pdo->query("
+// ---------- Liste
+$filters = [
+    'all'        => ['Tous', '1=1'],
+    'pending'    => ['À confirmer', 'u.email_verified_at IS NULL'],
+    'subscribed' => ['Abonnés alertes', 'u.notify_new_events = 1 AND u.email_verified_at IS NOT NULL'],
+    'admins'     => ['Admins', 'u.is_admin = 1'],
+];
+if (!isset($filters[$filter])) {
+    $filter = 'all';
+}
+$counts = [];
+foreach ($filters as $key => [, $cond]) {
+    $counts[$key] = (int)$pdo->query("SELECT COUNT(*) FROM users u WHERE $cond")->fetchColumn();
+}
+
+$where = $filters[$filter][1];
+$params = [];
+if ($q !== '') {
+    $where .= " AND (u.pseudo LIKE ? OR u.email LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR u.phone LIKE ?)";
+    $params = array_fill(0, 5, '%' . $q . '%');
+}
+$stmt = $pdo->prepare("
     SELECT u.*,
-           (SELECT COUNT(*) FROM registrations WHERE user_id = u.id) as total_registrations,
-           (SELECT MAX(registered_at) FROM registrations WHERE user_id = u.id) as last_registration
+           (SELECT COUNT(*) FROM registrations r WHERE r.user_id = u.id) AS games,
+           (SELECT MAX(e.event_date) FROM registrations r JOIN events e ON e.id = r.event_id WHERE r.user_id = u.id) AS last_game,
+           (SELECT COALESCE(SUM(o.amount_cents), 0) FROM orders o WHERE o.user_id = u.id AND o.status = 'paid') AS spent
     FROM users u
-    WHERE u.is_admin = 0
-    ORDER BY u.created_at DESC
+    WHERE $where
+    ORDER BY u.is_admin DESC, u.created_at DESC
+    LIMIT 300
 ");
-$players = $stmt->fetchAll();
+$stmt->execute($params);
+$players = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$flashes = flash_get();
 ?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion des joueurs - Administration</title>
+    <title>Joueurs - Administration</title>
+    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
     <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
     <?php include '../includes/header.php'; ?>
 
     <main class="container page-content">
-        <div class="admin-panel">
-            <div class="page-header">
-                <h1><?= icon('users') ?> Gestion des joueurs</h1>
-                <a href="index.php" class="btn btn-secondary">← Retour au dashboard</a>
+        <div class="a-page-head">
+            <div>
+                <h1>Joueurs</h1>
+                <div class="a-sub"><?= $counts['all'] ?> compte(s) · <?= $counts['subscribed'] ?> abonné(s) aux alertes</div>
             </div>
-
-            <?php if ($message): ?>
-                <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
-            <?php endif; ?>
-            <?php if ($error): ?>
-                <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
-            <?php endif; ?>
-
-            <!-- Formulaire d'ajout de joueur -->
-            <section class="dashboard-section">
-                <h2><?= icon('plus') ?> Ajouter un nouveau joueur</h2>
-                <form method="POST" enctype="multipart/form-data" class="admin-form">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="action" value="add_player">
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="pseudo">Pseudo *</label>
-                            <input type="text" id="pseudo" name="pseudo" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="email">Email *</label>
-                            <input type="email" id="email" name="email" required>
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="first_name">Prénom *</label>
-                            <input type="text" id="first_name" name="first_name" required maxlength="100">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="last_name">Nom *</label>
-                            <input type="text" id="last_name" name="last_name" required maxlength="100">
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="password">Mot de passe *</label>
-                            <input type="password" id="password" name="password" required minlength="8">
-                            <small>Minimum 8 caractères (le joueur pourra le changer, ou utiliser « mot de passe oublié »)</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="phone">Téléphone</label>
-                            <input type="tel" id="phone" name="phone">
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="profile_picture">Photo de profil</label>
-                        <input type="file" id="profile_picture" name="profile_picture" accept="image/*">
-                        <small>Formats acceptés : JPG, PNG, GIF (max 2MB)</small>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">Ajouter le joueur</button>
-                </form>
-            </section>
-
-            <section class="dashboard-section">
-                <h2>Liste des joueurs inscrits (<?= count($players) ?>)</h2>
-                
-                <?php if (empty($players)): ?>
-                    <p class="no-data">Aucun joueur inscrit.</p>
-                <?php else: ?>
-                    <div class="players-grid">
-                        <?php foreach ($players as $player): ?>
-                            <div class="player-card">
-                                <div class="player-avatar">
-                                    <?php if ($player['profile_picture']): ?>
-                                        <img src="../<?= htmlspecialchars($player['profile_picture']) ?>" alt="<?= htmlspecialchars($player['pseudo']) ?>">
-                                    <?php else: ?>
-                                        <div class="avatar-placeholder"><?= icon('user') ?></div>
-                                    <?php endif; ?>
-                                </div>
-                                
-                                <div class="player-info">
-                                    <h3><?= htmlspecialchars($player['pseudo']) ?></h3>
-                                    <?php if (!empty($player['first_name']) || !empty($player['last_name'])): ?>
-                                        <p class="player-name"><?= htmlspecialchars(full_name($player['first_name'], $player['last_name'])) ?></p>
-                                    <?php endif; ?>
-                                    <?php if (empty($player['email_verified_at'])): ?>
-                                        <p class="player-activity">⏳ Email non confirmé</p>
-                                    <?php endif; ?>
-                                    <p class="player-email">📧 <?= htmlspecialchars($player['email']) ?></p>
-                                    <?php if ($player['phone']): ?>
-                                        <p class="player-phone">📱 <?= htmlspecialchars($player['phone']) ?></p>
-                                    <?php endif; ?>
-                                    <p class="player-stats">
-                                        <?= icon('target') ?> <?= $player['total_registrations'] ?> inscriptions
-                                    </p>
-                                    <?php if ($player['last_registration']): ?>
-                                        <p class="player-activity">
-                                            Dernière activité: <?= date('d/m/Y', strtotime($player['last_registration'])) ?>
-                                        </p>
-                                    <?php endif; ?>
-                                    <p class="player-date">
-                                        Membre depuis <?= date('d/m/Y', strtotime($player['created_at'])) ?>
-                                    </p>
-                                </div>
-                                
-                                <div class="player-actions">
-                                    <?php if (empty($player['email_verified_at'])): ?>
-                                        <form method="POST" style="display:inline;">
-                                            <input type="hidden" name="action" value="verify_email">
-                                            <input type="hidden" name="user_id" value="<?= (int)$player['id'] ?>">
-                                            <button type="submit" class="btn btn-primary btn-sm">✅ Valider l'email</button>
-                                        </form>
-                                        <form method="POST" style="display:inline;">
-                                            <input type="hidden" name="action" value="resend_verification">
-                                            <input type="hidden" name="user_id" value="<?= (int)$player['id'] ?>">
-                                            <button type="submit" class="btn btn-outline btn-sm">✉️ Renvoyer</button>
-                                        </form>
-                                    <?php endif; ?>
-                                    <form method="POST" enctype="multipart/form-data" style="display:inline;">
-                                        <?= csrf_field() ?>
-                                        <input type="hidden" name="action" value="update_picture">
-                                        <input type="hidden" name="user_id" value="<?= $player['id'] ?>">
-                                        <label class="btn btn-outline btn-sm" style="cursor: pointer;">
-                                            📷 Photo
-                                            <input type="file" name="profile_picture" accept="image/*" style="display:none;" onchange="this.form.submit()">
-                                        </label>
-                                    </form>
-                                    
-                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Supprimer ce joueur ?');">
-                                        <?= csrf_field() ?>
-                                        <input type="hidden" name="action" value="delete_player">
-                                        <input type="hidden" name="user_id" value="<?= $player['id'] ?>">
-                                        <button type="submit" class="btn btn-danger btn-sm">🗑️ Supprimer</button>
-                                    </form>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </section>
         </div>
+
+        <?php foreach ($flashes as $flash): ?>
+            <div class="alert alert-<?= e($flash['type']) ?> a-flash"><?= e($flash['message']) ?></div>
+        <?php endforeach; ?>
+
+        <details class="a-collapse" <?= $addError ? 'open' : '' ?>>
+            <summary><?= admin_svg('plus', 18) ?> Ajouter un joueur manuellement</summary>
+            <div class="a-collapse-body">
+                <?php if ($addError): ?><div class="alert alert-error"><?= e($addError) ?></div><?php endif; ?>
+                <p class="a-small a-muted" style="margin-bottom:0.75rem;">Les joueurs peuvent aussi créer leur compte eux-mêmes sur le site. Un compte ajouté ici est confirmé d'office.</p>
+                <form method="POST" enctype="multipart/form-data" class="admin-form">
+                    <input type="hidden" name="action" value="add_player">
+                    <div class="form-row">
+                        <div class="form-group"><label for="pseudo">Pseudo *</label>
+                            <input type="text" id="pseudo" name="pseudo" required maxlength="30" value="<?= e($addForm['pseudo'] ?? '') ?>"></div>
+                        <div class="form-group"><label for="email">Email *</label>
+                            <input type="email" id="email" name="email" required value="<?= e($addForm['email'] ?? '') ?>"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label for="first_name">Prénom *</label>
+                            <input type="text" id="first_name" name="first_name" required maxlength="100" value="<?= e($addForm['first_name'] ?? '') ?>"></div>
+                        <div class="form-group"><label for="last_name">Nom *</label>
+                            <input type="text" id="last_name" name="last_name" required maxlength="100" value="<?= e($addForm['last_name'] ?? '') ?>"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label for="password">Mot de passe *</label>
+                            <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
+                            <small>8 caractères minimum (le joueur pourra le changer, ou utiliser « mot de passe oublié »)</small></div>
+                        <div class="form-group"><label for="phone">Téléphone</label>
+                            <input type="tel" id="phone" name="phone" value="<?= e($addForm['phone'] ?? '') ?>"></div>
+                    </div>
+                    <div class="form-group"><label for="profile_picture">Photo (facultatif)</label>
+                        <input type="file" id="profile_picture" name="profile_picture" accept="image/*"></div>
+                    <button type="submit" class="a-btn a-btn-primary"><?= admin_svg('plus', 18) ?> Ajouter le joueur</button>
+                </form>
+            </div>
+        </details>
+
+        <div class="a-toolbar">
+            <nav class="a-tabs" aria-label="Filtrer les joueurs">
+                <?php foreach ($filters as $key => [$label]): ?>
+                    <a class="a-tab<?= $filter === $key ? ' is-active' : '' ?>" href="?filter=<?= $key ?><?= $q !== '' ? '&q=' . urlencode($q) : '' ?>">
+                        <?= e($label) ?><span class="a-count"><?= $counts[$key] ?></span></a>
+                <?php endforeach; ?>
+            </nav>
+            <form class="a-search" method="GET" role="search">
+                <input type="hidden" name="filter" value="<?= e($filter) ?>">
+                <input type="search" name="q" value="<?= e($q) ?>" placeholder="Pseudo, nom, email, téléphone…" aria-label="Rechercher un joueur">
+                <button type="submit" class="a-btn a-btn-icon" title="Rechercher"><?= admin_svg('search', 18) ?></button>
+            </form>
+        </div>
+
+        <section class="a-card">
+            <?php if (!$players): ?>
+                <p class="a-empty"><?= $q !== '' ? 'Aucun joueur ne correspond à « ' . e($q) . ' ».' : 'Aucun joueur dans cette catégorie.' ?></p>
+            <?php else: ?>
+                <table class="rtable">
+                    <thead>
+                        <tr>
+                            <th>Joueur</th>
+                            <th>Contact</th>
+                            <th>Parties</th>
+                            <th>Payé</th>
+                            <th>Statut</th>
+                            <th style="text-align:right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($players as $p): $isMe = (int)$p['id'] === current_user_id(); ?>
+                            <tr>
+                                <td class="t-head">
+                                    <span style="display:flex;align-items:center;gap:0.65rem;">
+                                        <?php if ($p['profile_picture']): ?>
+                                            <img class="a-avatar" src="../<?= e($p['profile_picture']) ?>" alt="">
+                                        <?php else: ?>
+                                            <span class="a-avatar a-avatar-empty"><?= e(mb_strtoupper(mb_substr($p['pseudo'], 0, 1))) ?></span>
+                                        <?php endif; ?>
+                                        <span style="min-width:0;">
+                                            <span class="t-title"><?= e($p['pseudo']) ?><?= $isMe ? ' (toi)' : '' ?></span>
+                                            <span class="t-sub"><?= e(full_name($p['first_name'], $p['last_name']) ?: 'Nom non renseigné') ?> · membre depuis <?= e(date('m/Y', strtotime($p['created_at']))) ?></span>
+                                        </span>
+                                    </span>
+                                </td>
+                                <td data-label="Contact">
+                                    <span>
+                                        <a class="a-link" href="mailto:<?= e($p['email']) ?>"><?= e($p['email']) ?></a>
+                                        <?php if ($p['phone']): ?><span class="t-sub"><a class="a-link" href="tel:<?= e(preg_replace('/[^0-9+]/', '', $p['phone'])) ?>"><?= e($p['phone']) ?></a></span><?php endif; ?>
+                                    </span>
+                                </td>
+                                <td data-label="Parties">
+                                    <span><?= (int)$p['games'] ?>
+                                        <?php if ($p['last_game']): ?><span class="t-sub">dernière : <?= e(date('d/m/Y', strtotime($p['last_game']))) ?></span><?php endif; ?></span>
+                                </td>
+                                <td data-label="Payé"><span class="t-num"><?= e(format_price((int)$p['spent'])) ?></span></td>
+                                <td data-label="Statut">
+                                    <span style="display:inline-flex;flex-wrap:wrap;gap:0.3rem;justify-content:flex-end;">
+                                        <?php if ((int)$p['is_admin'] === 1): ?><span class="a-badge st-danger">Admin</span><?php endif; ?>
+                                        <?php if (empty($p['email_verified_at'])): ?><span class="a-badge st-warn">Email à confirmer</span>
+                                        <?php else: ?><span class="a-badge st-ok">Confirmé</span><?php endif; ?>
+                                        <?php if (!empty($p['notify_new_events'])): ?><span class="a-badge st-info" title="Abonné aux alertes">🔔</span><?php endif; ?>
+                                    </span>
+                                </td>
+                                <td class="t-actions-cell">
+                                    <div class="t-actions">
+                                        <?php if (empty($p['email_verified_at'])): ?>
+                                            <form class="a-inline" method="POST" action="<?= e($backUrl) ?>">
+                                                <input type="hidden" name="action" value="verify_email"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
+                                                <button type="submit" class="a-btn a-btn-sm a-btn-ok"><?= admin_svg('check', 16) ?> Valider</button>
+                                            </form>
+                                            <form class="a-inline" method="POST" action="<?= e($backUrl) ?>">
+                                                <input type="hidden" name="action" value="resend_verification"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
+                                                <button type="submit" class="a-btn a-btn-sm a-btn-icon" title="Renvoyer l'email de confirmation"><?= admin_svg('mail', 16) ?></button>
+                                            </form>
+                                        <?php endif; ?>
+                                        <a href="orders.php?q=<?= urlencode($p['email']) ?>" class="a-btn a-btn-sm a-btn-icon" title="Ses réservations"><?= admin_svg('card', 16) ?></a>
+                                        <form class="a-inline" method="POST" enctype="multipart/form-data" action="<?= e($backUrl) ?>">
+                                            <input type="hidden" name="action" value="update_picture"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
+                                            <label class="a-btn a-btn-sm a-btn-icon" title="Changer la photo" style="margin:0;"><?= admin_svg('image', 16) ?>
+                                                <input type="file" name="profile_picture" accept="image/*" style="display:none;" onchange="this.form.submit()"></label>
+                                        </form>
+                                        <?php if (!$isMe): ?>
+                                            <form class="a-inline" method="POST" action="<?= e($backUrl) ?>"
+                                                  onsubmit="return confirm(<?= e(js_str((int)$p['is_admin'] === 1 ? 'Retirer les droits administrateur de ' . $p['pseudo'] . ' ?' : 'Donner les droits administrateur à ' . $p['pseudo'] . ' ? Il aura accès à tout le panel (paiements, joueurs, scanner).')) ?>);">
+                                                <input type="hidden" name="action" value="toggle_admin"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
+                                                <button type="submit" class="a-btn a-btn-sm a-btn-icon" title="<?= (int)$p['is_admin'] === 1 ? 'Retirer les droits admin' : 'Nommer administrateur' ?>"><?= admin_svg('shield', 16) ?></button>
+                                            </form>
+                                            <?php if ((int)$p['is_admin'] !== 1): ?>
+                                                <form class="a-inline" method="POST" action="<?= e($backUrl) ?>"
+                                                      onsubmit="return confirm(<?= e(js_str('Supprimer définitivement le compte de ' . $p['pseudo'] . ' ?')) ?>);">
+                                                    <input type="hidden" name="action" value="delete_player"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
+                                                    <button type="submit" class="a-btn a-btn-sm a-btn-icon a-btn-danger" title="Supprimer le compte"><?= admin_svg('trash', 16) ?></button>
+                                                </form>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </section>
     </main>
 
     <?php include '../includes/footer.php'; ?>

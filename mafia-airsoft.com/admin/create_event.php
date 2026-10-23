@@ -84,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <main class="container page-content">
         <div class="admin-form-container">
+            <a class="a-link" href="events.php">← Parties</a>
             <h1><?= icon('plus') ?> Créer une nouvelle partie</h1>
 
             <?php if ($error): ?>

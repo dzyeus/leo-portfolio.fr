@@ -86,7 +86,12 @@ $event_time_only = date('H:i', strtotime($event['event_date']));
 
     <main class="container page-content">
         <div class="admin-form-container">
+            <a class="a-link" href="view_event.php?id=<?= (int)$event_id ?>">← Retour à la partie</a>
             <h1><?= icon('edit') ?> Modifier la partie</h1>
+
+            <?php foreach (flash_get() as $flash): ?>
+                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
+            <?php endforeach; ?>
 
             <?php if ($error): ?>
                 <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
