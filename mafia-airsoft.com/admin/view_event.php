@@ -165,7 +165,12 @@ $flashes = flash_get();
             <div class="a-card-head">
                 <h2><?= admin_svg('users', 18) ?> Inscrits
                     <?php if ($teamFilter): ?><span class="a-badge st-muted"><?= e($teamsByKey[$teamFilter]['team_name']) ?></span><?php endif; ?></h2>
-                <?php if ($teamFilter): ?><a class="a-link" href="?id=<?= $event_id ?>#inscrits">Toutes les équipes</a><?php endif; ?>
+                <div class="a-actions">
+                    <?php if ($teamFilter): ?><a class="a-link" href="?id=<?= $event_id ?>#inscrits">Toutes les équipes</a><?php endif; ?>
+                    <?php if ($registrations): ?>
+                        <a class="a-btn a-btn-sm" href="message.php?event=<?= $event_id ?>"><?= admin_svg('send', 16) ?> Écrire aux inscrits</a>
+                    <?php endif; ?>
+                </div>
             </div>
 
             <?php if (!$registrations): ?>

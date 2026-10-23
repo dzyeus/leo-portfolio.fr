@@ -180,6 +180,10 @@ $flashes = flash_get();
                 <h1>Joueurs</h1>
                 <div class="a-sub"><?= $counts['all'] ?> compte(s) · <?= $counts['subscribed'] ?> abonné(s) aux alertes</div>
             </div>
+            <div class="a-actions">
+                <a class="a-btn" href="message.php?target=<?= $filter === 'subscribed' ? 'subscribers' : 'all' ?>"><?= admin_svg('send', 18) ?>
+                    <?= $filter === 'subscribed' ? 'Écrire aux abonnés' : 'Écrire à tous' ?></a>
+            </div>
         </div>
 
         <?php foreach ($flashes as $flash): ?>
@@ -295,6 +299,7 @@ $flashes = flash_get();
                                                 <button type="submit" class="a-btn a-btn-sm a-btn-icon" title="Renvoyer l'email de confirmation"><?= admin_svg('mail', 16) ?></button>
                                             </form>
                                         <?php endif; ?>
+                                        <a href="message.php?to=<?= urlencode($p['email']) ?>" class="a-btn a-btn-sm a-btn-icon" title="Lui écrire"><?= admin_svg('send', 16) ?></a>
                                         <a href="orders.php?q=<?= urlencode($p['email']) ?>" class="a-btn a-btn-sm a-btn-icon" title="Ses réservations"><?= admin_svg('card', 16) ?></a>
                                         <form class="a-inline" method="POST" enctype="multipart/form-data" action="<?= e($backUrl) ?>">
                                             <input type="hidden" name="action" value="update_picture"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">

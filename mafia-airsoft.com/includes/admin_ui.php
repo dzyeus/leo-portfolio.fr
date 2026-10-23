@@ -44,6 +44,7 @@ function admin_svg(string $name, int $size = 20): string
         'x'        => '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
         'arrow'    => '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
         'printer'  => '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+        'send'     => '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
         'eyeoff'   => '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>',
     ];
     $p = $paths[$name] ?? $paths['arrow'];
@@ -65,6 +66,7 @@ function admin_sections(): array
         'events'    => ['Parties',         'admin/events.php',       'calendar'],
         'orders'    => ['Réservations',    'admin/orders.php',       'card'],
         'players'   => ['Joueurs',         'admin/players.php',      'users'],
+        'message'   => ['Messages',        'admin/message.php',      'send'],
         'scan'      => ['Scanner',         'qr-code/scan.php',       'scan'],
         'tickets'   => ['Billets',         'qr-code/dashboard.php',  'ticket'],
         'blog'      => ['Blog',            'admin/manage_blog.php',  'file'],
@@ -87,6 +89,7 @@ function admin_current_section(): string
         'manage_teams.php', 'delete_event.php', 'duplicate_event.php' => 'events',
         'orders.php'                                  => 'orders',
         'players.php'                                 => 'players',
+        'message.php'                                 => 'message',
         'manage_blog.php'                             => 'blog',
         'manage_gallery.php'                          => 'gallery',
         'diagnostic.php'                              => 'diagnostic',

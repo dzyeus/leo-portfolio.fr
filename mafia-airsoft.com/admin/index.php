@@ -232,7 +232,7 @@ $flashes = flash_get();
                     <div class="a-tiles">
                         <a class="a-tile a-tile-primary" href="create_event.php"><?= admin_svg('plus', 22) ?> Créer une partie</a>
                         <a class="a-tile" href="../qr-code/scan.php"><?= admin_svg('scan', 22) ?> Scanner</a>
-                        <a class="a-tile" href="orders.php"><?= admin_svg('card', 22) ?> Réservations</a>
+                        <a class="a-tile" href="message.php"><?= admin_svg('send', 22) ?> Écrire aux joueurs</a>
                         <a class="a-tile" href="players.php"><?= admin_svg('users', 22) ?> Joueurs</a>
                         <a class="a-tile" href="manage_blog.php"><?= admin_svg('file', 22) ?> Écrire un article</a>
                         <a class="a-tile" href="manage_gallery.php"><?= admin_svg('image', 22) ?> Ajouter des photos</a>
