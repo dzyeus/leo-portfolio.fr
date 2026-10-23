@@ -102,18 +102,38 @@ function admin_render_nav(string $base): void
 {
     $current = admin_current_section();
     $sections = admin_sections();
+    // Ordinateur : sections principales visibles, le reste dans « Plus »
+    $deskMain = ['dashboard', 'events', 'orders', 'players', 'message', 'scan'];
+    $deskMore = array_diff(array_keys($sections), $deskMain);
+    // Mobile : 4 onglets + « Plus »
     $mobileMain = ['dashboard', 'events', 'scan', 'orders'];
     ?>
     <link rel="stylesheet" href="<?= e($base) ?>css/admin-panel.css">
     <nav class="admin-bar" aria-label="Navigation du panel administrateur">
         <div class="container admin-bar-inner">
-            <?php foreach ($sections as $key => [$label, $url, $ico]): ?>
-                <a href="<?= e($base . $url) ?>" class="admin-bar-link<?= $current === $key ? ' is-active' : '' ?>"
-                   <?= $current === $key ? 'aria-current="page"' : '' ?>>
-                    <?= admin_svg($ico, 18) ?><span><?= e($label) ?></span>
-                </a>
-            <?php endforeach; ?>
-            <a href="<?= e($base) ?>index.php" class="admin-bar-link admin-bar-site"><?= admin_svg('external', 18) ?><span>Voir le site</span></a>
+            <div class="admin-bar-links">
+                <?php foreach ($deskMain as $key): [$label, $url, $ico] = $sections[$key]; ?>
+                    <a href="<?= e($base . $url) ?>" class="admin-bar-link<?= $current === $key ? ' is-active' : '' ?>" title="<?= e($label) ?>"
+                       <?= $current === $key ? 'aria-current="page"' : '' ?>>
+                        <?= admin_svg($ico, 18) ?><span><?= e($label) ?></span>
+                    </a>
+                <?php endforeach; ?>
+                <details class="admin-bar-more<?= in_array($current, $deskMore, true) ? ' is-active' : '' ?>">
+                    <summary class="admin-bar-link<?= in_array($current, $deskMore, true) ? ' is-active' : '' ?>" title="Plus">
+                        <?= admin_svg('menu', 18) ?><span><?= in_array($current, $deskMore, true) ? e($sections[$current][0]) : 'Plus' ?></span>
+                        <svg class="admin-bar-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                    </summary>
+                    <div class="admin-bar-menu">
+                        <?php foreach ($deskMore as $key): [$label, $url, $ico] = $sections[$key]; ?>
+                            <a href="<?= e($base . $url) ?>" class="<?= $current === $key ? 'is-active' : '' ?>"><?= admin_svg($ico, 18) ?> <?= e($label) ?></a>
+                        <?php endforeach; ?>
+                        <a href="<?= e($base) ?>admin/create_event.php"><?= admin_svg('plus', 18) ?> Créer une partie</a>
+                    </div>
+                </details>
+            </div>
+            <a href="<?= e($base) ?>index.php" class="admin-bar-site" title="Revenir sur le site public">
+                <?= admin_svg('external', 17) ?><span>Voir le site</span>
+            </a>
         </div>
     </nav>
 
@@ -126,15 +146,27 @@ function admin_render_nav(string $base): void
         <details class="admin-tab admin-tab-more<?= !in_array($current, $mobileMain, true) && $current !== '' ? ' is-active' : '' ?>">
             <summary><?= admin_svg('menu', 22) ?><span>Plus</span></summary>
             <div class="admin-more-sheet">
+                <a href="<?= e($base) ?>index.php" class="admin-more-site"><?= admin_svg('external', 20) ?> Voir le site</a>
                 <?php foreach ($sections as $key => [$label, $url, $ico]): if (in_array($key, $mobileMain, true)) continue; ?>
                     <a href="<?= e($base . $url) ?>" class="<?= $current === $key ? 'is-active' : '' ?>"><?= admin_svg($ico, 20) ?> <?= e($label) ?></a>
                 <?php endforeach; ?>
                 <a href="<?= e($base) ?>admin/create_event.php"><?= admin_svg('plus', 20) ?> Créer une partie</a>
-                <a href="<?= e($base) ?>index.php"><?= admin_svg('external', 20) ?> Voir le site</a>
                 <a href="<?= e($base) ?>logout.php"><?= admin_svg('x', 20) ?> Déconnexion</a>
             </div>
         </details>
     </nav>
+    <script>
+    // Les menus « Plus » se ferment en cliquant ailleurs ou avec Échap
+    (function () {
+        var menus = document.querySelectorAll('.admin-bar-more, .admin-tab-more');
+        function closeAll(except) { menus.forEach(function (d) { if (d !== except) { d.removeAttribute('open'); } }); }
+        document.addEventListener('click', function (e) {
+            var inside = e.target.closest ? e.target.closest('.admin-bar-more, .admin-tab-more') : null;
+            closeAll(inside);
+        });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeAll(null); } });
+    })();
+    </script>
     <?php
 }
 

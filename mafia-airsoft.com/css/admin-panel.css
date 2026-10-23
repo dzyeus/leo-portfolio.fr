@@ -12,18 +12,17 @@
 }
 .admin-bar-inner {
     display: flex;
-    gap: 0.25rem;
-    overflow-x: auto;
-    scrollbar-width: none;
+    align-items: center;
+    gap: 0.75rem;
     padding-top: 0.5rem;
     padding-bottom: 0.5rem;
 }
-.admin-bar-inner::-webkit-scrollbar { display: none; }
+.admin-bar-links { display: flex; align-items: center; gap: 0.2rem; flex: 1 1 auto; min-width: 0; }
 .admin-bar-link {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    padding: 0.5rem 0.8rem;
+    padding: 0.5rem 0.75rem;
     border-radius: var(--radius-md);
     color: #a3a3a3;
     text-decoration: none;
@@ -31,8 +30,11 @@
     font-size: 0.95rem;
     white-space: nowrap;
     border: 1px solid transparent;
+    cursor: pointer;
+    list-style: none;
     transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
+.admin-bar-link::-webkit-details-marker { display: none; }
 .admin-bar-link:hover { color: #fff; background: rgba(255, 255, 255, 0.04); }
 .admin-bar-link.is-active {
     color: #fff;
@@ -40,7 +42,48 @@
     border-color: rgba(220, 38, 38, 0.45);
 }
 .admin-bar-link.is-active .a-ico { color: var(--primary-light); }
-.admin-bar-site { margin-left: auto; }
+
+/* Menu « Plus » */
+.admin-bar-more { position: relative; }
+.admin-bar-chevron { transition: transform 0.2s; opacity: 0.7; }
+.admin-bar-more[open] .admin-bar-chevron { transform: rotate(180deg); }
+.admin-bar-more[open] > .admin-bar-link { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.admin-bar-menu {
+    position: absolute; top: calc(100% + 6px); left: 0; min-width: 220px; z-index: 950;
+    background: #151515; border: 1px solid #2f2f2f; border-radius: var(--radius-lg);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65); padding: 0.4rem;
+    display: flex; flex-direction: column;
+}
+.admin-bar-menu a {
+    display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.75rem; border-radius: var(--radius-md);
+    color: #e5e5e5; text-decoration: none; font-weight: 600; font-size: 0.93rem;
+}
+.admin-bar-menu a .a-ico { color: var(--primary-light); }
+.admin-bar-menu a:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
+.admin-bar-menu a.is-active { background: rgba(220, 38, 38, 0.15); color: #fff; }
+.admin-bar-menu a:last-child { border-top: 1px solid #262626; margin-top: 0.3rem; padding-top: 0.75rem; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+
+/* Bouton « Voir le site » : toujours visible, à droite */
+.admin-bar-site {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.5rem 0.95rem; border-radius: 999px;
+    border: 1px solid #3a3a3a; background: #1a1a1a; color: #e5e5e5;
+    text-decoration: none; font-weight: 700; font-size: 0.9rem; white-space: nowrap;
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.admin-bar-site .a-ico { color: var(--primary-light); }
+.admin-bar-site:hover { border-color: var(--primary); background: rgba(220, 38, 38, 0.12); color: #fff; }
+
+/* Écrans moyens : liens resserrés, puis icônes seules (le libellé de la page active reste affiché) */
+@media (max-width: 1180px) {
+    .admin-bar-links { gap: 0; }
+    .admin-bar-links .admin-bar-link { padding: 0.5rem 0.55rem; font-size: 0.9rem; }
+}
+@media (max-width: 1040px) {
+    .admin-bar-links .admin-bar-link:not(.is-active) > span { display: none; }
+    .admin-bar-links .admin-bar-link { padding: 0.5rem 0.6rem; }
+}
 
 /* ---------- Navigation : onglets en bas (mobile) ---------- */
 .admin-tabbar { display: none; }
@@ -120,6 +163,7 @@
         font-weight: 600;
     }
     .admin-more-sheet a:active, .admin-more-sheet a.is-active { background: rgba(220, 38, 38, 0.15); }
+    .admin-more-sheet a.admin-more-site { grid-column: 1 / -1; justify-content: center; color: #fff; border: 1px solid #3a3a3a; background: #1c1c1c; margin-bottom: 0.2rem; }
 
     /* Pages admin plus compactes sur téléphone */
     .page-content { padding: 1rem 0 1.5rem; }
