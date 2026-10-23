@@ -63,7 +63,7 @@ $total_registrations = $stmt->fetchColumn();
                     <a href="players.php" class="btn btn-secondary btn-lg">
                         <?= icon('users') ?> Gérer les joueurs
                     </a>
-                    <a href="../qr-code/dashboard.php" class="btn btn-success btn-lg">
+                    <a href="../qr-code/dashboard.php" class="btn btn-secondary btn-lg">
                         <?= icon('ticket') ?> Gestion des billets
                     </a>
                     <a href="diagnostic.php" class="btn btn-secondary btn-lg">

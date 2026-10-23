@@ -291,7 +291,7 @@ if ($selectedEventId) {
             <p>Contrôlez et suivez tous les billets d'entrée</p>
             
             <div class="quick-actions">
-                <a href="scan.php" class="btn btn-success"><?= icon('camera', 'Scanner') ?> Scanner les billets</a>
+                <a href="scan.php" class="btn btn-secondary"><?= icon('camera', 'Scanner') ?> Scanner les billets</a>
                 <a href="../admin/index.php" class="btn btn-secondary">← Retour admin</a>
             </div>
         </div>
