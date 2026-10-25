@@ -2,9 +2,10 @@
 require_once '../config/database.php';
 require_once '../config/session.php';
 require_once '../config/team_helpers.php';
+require_once '../includes/admin_event_form.php';
 requireAdmin();
 
-$event_id = $_GET['id'] ?? 0;
+$event_id = (int)($_GET['id'] ?? 0);
 
 $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ?");
 $stmt->execute([$event_id]);
@@ -72,136 +73,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Séparer la date et l'heure pour les champs du formulaire
 $event_date_only = date('Y-m-d', strtotime($event['event_date']));
 $event_time_only = date('H:i', strtotime($event['event_date']));
+
+$values = [
+    'title'              => $event['title'],
+    'event_date'         => $event_date_only,
+    'event_time'         => $event_time_only,
+    'location'           => $event['location'],
+    'price'              => is_string($_POST['price'] ?? null) ? $_POST['price'] : admin_price_input((int)($event['price_cents'] ?? 0)),
+    'description'        => $event['description'],
+    'scenario'           => $event['scenario'],
+    'equipment_required' => $event['equipment_required'],
+    'rules'              => $event['rules'],
+];
+// En cas d'erreur, on garde ce que l'admin vient de saisir
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error && !$success) {
+    foreach (array_keys($values) as $k) {
+        if (isset($_POST[$k]) && is_string($_POST[$k])) {
+            $values[$k] = $_POST[$k];
+        }
+    }
+}
+$flashes = flash_get();
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modifier - <?= htmlspecialchars($event['title']) ?></title>
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head('Modifier · ' . $event['title'], ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
-        <div class="admin-form-container">
-            <a class="a-link" href="view_event.php?id=<?= (int)$event_id ?>">← Retour à la partie</a>
-            <h1><?= icon('edit') ?> Modifier la partie</h1>
-
-            <?php foreach (flash_get() as $flash): ?>
-                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
-            <?php endforeach; ?>
-
-            <?php if ($error): ?>
-                <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
-            <?php endif; ?>
-            
-            <?php if ($success): ?>
-                <div class="alert alert-success"><?= htmlspecialchars($success) ?></div>
-            <?php endif; ?>
-
-            <form method="POST" class="admin-form">
-                <?= csrf_field() ?>
-                <div class="form-section">
-                    <h3>Informations générales</h3>
-                    
-                    <div class="form-group">
-                        <label for="title">Titre de la partie *</label>
-                        <input type="text" id="title" name="title" required 
-                               value="<?= htmlspecialchars($event['title']) ?>">
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="event_date">Date *</label>
-                            <input type="date" id="event_date" name="event_date" required 
-                                   value="<?= $event_date_only ?>">
-                        </div>
-                        <div class="form-group">
-                            <label for="event_time">Heure *</label>
-                            <input type="time" id="event_time" name="event_time" required 
-                                   value="<?= $event_time_only ?>">
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="location">Lieu *</label>
-                        <input type="text" id="location" name="location" required 
-                               value="<?= htmlspecialchars($event['location']) ?>">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="price">Prix par place (€) *</label>
-                        <input type="text" id="price" name="price" required inputmode="decimal"
-                               value="<?= htmlspecialchars($_POST['price'] ?? number_format(($event['price_cents'] ?? 0) / 100, 2, ',', '')) ?>">
-                        <small>0 = gratuit. Changer le prix ne modifie pas les places déjà payées.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="description">Description</label>
-                        <textarea id="description" name="description" rows="3"><?= htmlspecialchars($event['description']) ?></textarea>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3>Scénario et règles</h3>
-                    
-                    <div class="form-group">
-                        <label for="scenario">Scénario détaillé</label>
-                        <textarea id="scenario" name="scenario" rows="6"><?= htmlspecialchars($event['scenario']) ?></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="equipment_required">Matériel recommandé</label>
-                        <textarea id="equipment_required" name="equipment_required" rows="3"><?= htmlspecialchars($event['equipment_required']) ?></textarea>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="rules">Règles spéciales</label>
-                        <textarea id="rules" name="rules" rows="3"><?= htmlspecialchars($event['rules']) ?></textarea>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3>Options</h3>
-                    
-                    <div class="form-group-checkbox">
-                        <input type="checkbox" id="is_active" name="is_active" 
-                               <?= $event['is_active'] ? 'checked' : '' ?>>
-                        <label for="is_active">Partie active (visible sur le site)</label>
-                    </div>
-                    
-                    <div class="form-group-checkbox">
-                        <input type="checkbox" id="registration_open" name="registration_open" 
-                               <?= $event['registration_open'] ? 'checked' : '' ?>>
-                        <label for="registration_open">Inscriptions ouvertes</label>
-                    </div>
-
-                    <div class="form-group-checkbox">
-                        <input type="checkbox" id="announce" name="announce" value="1">
-                        <label for="announce">
-                            <?= empty($event['announced_at']) ? 'Envoyer l\'annonce' : 'Renvoyer l\'annonce' ?> par email aux joueurs abonnés
-                            (<?= subscribers_count($pdo) ?> abonné(s))
-                        </label>
-                    </div>
-                    <?php if (!empty($event['announced_at'])): ?>
-                        <small style="color:#a3a3a3;">Dernière annonce : <?= date('d/m/Y à H:i', strtotime($event['announced_at'])) ?>
-                            (<?= (int)($event['announced_count'] ?? 0) ?> email(s) envoyé(s)).</small>
-                    <?php endif; ?>
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary btn-lg">💾 Enregistrer les modifications</button>
-                    <a href="manage_teams.php?event_id=<?= $event_id ?>" class="btn btn-outline btn-lg"><?= icon('users') ?> Gérer les équipes</a>
-                    <a href="view_event.php?id=<?= $event_id ?>" class="btn btn-secondary btn-lg">Annuler</a>
-                </div>
-            </form>
-
-            <div style="margin-top: var(--spacing-lg); text-align: right;">
-                <a href="delete_event.php?id=<?= $event_id ?>" class="btn btn-danger"><?= icon('trash') ?> Supprimer la partie</a>
+    <main class="s-wrap">
+        <div class="a-page-head">
+            <div>
+                <a class="a-link" href="view_event.php?id=<?= $event_id ?>">← Retour à la partie</a>
+                <h1>Modifier la partie</h1>
+                <div class="a-sub"><?= e($event['title']) ?> · <?= e(ucfirst(date_fr($event['event_date']))) ?></div>
+            </div>
+            <div class="a-actions">
+                <a href="manage_teams.php?event_id=<?= $event_id ?>" class="a-btn"><?= ui_icon('shield', 18) ?> Équipes</a>
+                <a href="../event.php?id=<?= $event_id ?>" class="a-btn" target="_blank" rel="noopener"><?= ui_icon('external', 18) ?> Voir sur le site</a>
             </div>
         </div>
+
+        <?php foreach ($flashes as $flash): ?>
+            <div class="alert alert-<?= e($flash['type']) ?> a-flash"><?= e($flash['message']) ?></div>
+        <?php endforeach; ?>
+        <?php if ($error): ?>
+            <div class="alert alert-error a-flash" role="alert"><?= e($error) ?></div>
+        <?php endif; ?>
+        <?php if ($success): ?>
+            <div class="alert alert-success a-flash"><?= e($success) ?></div>
+        <?php endif; ?>
+
+        <form method="POST" action="edit_event.php?id=<?= $event_id ?>" class="s-form">
+            <?= csrf_field() ?>
+            <div class="a-grid a-grid-main">
+                <div class="a-stack">
+                    <?php admin_event_form_fields($values); ?>
+                </div>
+                <aside class="a-stack">
+                    <section class="a-card">
+                        <div class="a-card-head"><h2><?= ui_icon('settings', 18) ?> Publication</h2></div>
+                        <div class="s-check">
+                            <input type="checkbox" id="is_active" name="is_active" value="1" <?= $event['is_active'] ? 'checked' : '' ?>>
+                            <label for="is_active">Partie visible sur le site</label>
+                        </div>
+                        <div class="s-check">
+                            <input type="checkbox" id="registration_open" name="registration_open" value="1" <?= $event['registration_open'] ? 'checked' : '' ?>>
+                            <label for="registration_open">Inscriptions ouvertes</label>
+                        </div>
+                        <div class="s-check">
+                            <input type="checkbox" id="announce" name="announce" value="1">
+                            <label for="announce"><?= empty($event['announced_at']) ? 'Envoyer' : 'Renvoyer' ?> l'annonce par email aux joueurs abonnés (<?= (int)subscribers_count($pdo) ?>)</label>
+                        </div>
+                        <?php if (!empty($event['announced_at'])): ?>
+                            <p class="s-hint" style="margin-bottom:1rem;">Dernière annonce le <?= e(date('d/m/Y à H\hi', strtotime($event['announced_at']))) ?>
+                                (<?= (int)($event['announced_count'] ?? 0) ?> email(s) envoyé(s)).</p>
+                        <?php else: ?>
+                            <p class="s-hint" style="margin-bottom:1rem;">L'annonce n'a pas encore été envoyée.</p>
+                        <?php endif; ?>
+                        <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block"><?= ui_icon('check', 18) ?> Enregistrer</button>
+                        <a href="view_event.php?id=<?= $event_id ?>" class="a-btn a-btn-block" style="margin-top:0.5rem;">Annuler</a>
+                    </section>
+                    <section class="a-card">
+                        <div class="a-card-head"><h2><?= ui_icon('alert', 18) ?> Zone sensible</h2></div>
+                        <p class="s-hint" style="margin-bottom:0.75rem;">Supprimer efface la partie, ses inscrits et leurs billets. Pour la retirer du site sans rien perdre, décoche « Partie visible ».</p>
+                        <a href="delete_event.php?id=<?= $event_id ?>" class="a-btn a-btn-danger a-btn-block"><?= ui_icon('trash', 18) ?> Supprimer la partie</a>
+                    </section>
+                </aside>
+            </div>
+        </form>
     </main>
 
     <?php include '../includes/footer.php'; ?>

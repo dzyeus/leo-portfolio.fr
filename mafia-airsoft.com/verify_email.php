@@ -12,25 +12,15 @@ if ($userId) {
     redirect('login.php');
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirmation de l'email - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<?php site_head("Confirmation de l'email", ['noindex' => true]); include 'includes/header.php'; ?>
 
-    <main class="auth-container">
-        <div class="auth-box">
-            <h1>Lien invalide</h1>
+    <main class="s-wrap">
+        <div class="s-auth"><div class="a-card">
+            <div class="s-auth-head"><img src="images/logo.png" alt="" width="64" height="64"><h1>Lien invalide</h1></div>
             <div class="alert alert-error">Ce lien de confirmation est invalide, déjà utilisé ou expiré (48 h).</div>
-            <p class="auth-link"><a href="resend_verification.php">Recevoir un nouveau lien</a></p>
-            <p class="auth-link"><a href="login.php">Aller à la connexion</a></p>
-        </div>
+            <p class="s-auth-link"><a href="resend_verification.php">Recevoir un nouveau lien</a></p>
+            <p class="s-auth-link"><a href="login.php">Aller à la connexion</a></p>
+        </div></div>
     </main>
 
     <?php include 'includes/footer.php'; ?>

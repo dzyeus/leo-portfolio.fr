@@ -71,19 +71,10 @@ $recent = $pdo->query("
 
 $flashes = flash_get();
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tableau de bord - Administration</title>
-    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head('Tableau de bord', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
+    <main class="s-wrap">
         <div class="a-page-head">
             <div>
                 <h1>Tableau de bord</h1>
@@ -150,7 +141,7 @@ $flashes = flash_get();
                     <?php endif; ?>
 
                     <?php if ($next['guests_missing'] > 0): ?>
-                        <p class="a-small a-muted" style="margin-bottom:0.75rem;">⚠️ <?= $next['guests_missing'] ?> invité(s) sans nom : leur billet n'est pas encore généré.</p>
+                        <p class="a-small a-muted" style="margin-bottom:0.75rem;"><?= ui_icon('alert', 15) ?> <?= $next['guests_missing'] ?> invité(s) sans nom : leur billet n'est pas encore généré.</p>
                     <?php endif; ?>
 
                     <div class="a-next-actions">

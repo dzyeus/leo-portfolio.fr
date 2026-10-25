@@ -5,13 +5,13 @@ require_once 'includes/legal_layout.php';
 
 legal_page_start('Politique de confidentialité');
 ?>
-        <section class="dashboard-section">
+        <section class="a-card s-legal-section">
             <h2>Responsable du traitement</h2>
             <p><strong><?= e(ASSO_NAME) ?></strong>, <?= e(asso_address_inline()) ?>.
                Contact pour toute question sur tes données : <a href="mailto:<?= e(ASSO_EMAIL) ?>"><?= e(ASSO_EMAIL) ?></a>.</p>
         </section>
 
-        <section class="dashboard-section">
+        <section class="a-card s-legal-section">
             <h2>Données collectées et pourquoi</h2>
             <ul>
                 <li><strong>Compte</strong> : pseudo, nom, prénom, email, téléphone (facultatif), mot de passe (chiffré, illisible même pour nous),
@@ -27,7 +27,7 @@ legal_page_start('Politique de confidentialité');
             </ul>
         </section>
 
-        <section class="dashboard-section">
+        <section class="a-card s-legal-section">
             <h2>Destinataires</h2>
             <ul>
                 <li>Les organisateurs de l'association (listes des participants, contrôle des billets).</li>
@@ -39,7 +39,7 @@ legal_page_start('Politique de confidentialité');
             <p>Tes données ne sont jamais vendues ni utilisées à des fins publicitaires.</p>
         </section>
 
-        <section class="dashboard-section">
+        <section class="a-card s-legal-section">
             <h2>Durées de conservation</h2>
             <ul>
                 <li>Compte : jusqu'à sa suppression (par toi depuis ton profil, ou sur demande).</li>
@@ -49,7 +49,7 @@ legal_page_start('Politique de confidentialité');
             </ul>
         </section>
 
-        <section class="dashboard-section">
+        <section class="a-card s-legal-section">
             <h2>Tes droits</h2>
             <p>Tu disposes d'un droit d'accès, de rectification, d'effacement, de limitation, d'opposition, de portabilité
                de tes données et du droit de retirer ton consentement aux alertes à tout moment.</p>
@@ -62,7 +62,7 @@ legal_page_start('Politique de confidentialité');
                (<a href="https://www.cnil.fr" rel="noopener" target="_blank">www.cnil.fr</a>).</p>
         </section>
 
-        <section class="dashboard-section">
+        <section class="a-card s-legal-section">
             <h2>Cookies</h2>
             <p>Le site utilise uniquement un cookie technique de session, nécessaire pour rester connecté et sécuriser les
                formulaires. Il ne nécessite pas de consentement. Aucun cookie publicitaire ni de statistiques n'est déposé.</p>

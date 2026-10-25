@@ -82,19 +82,10 @@ $isPast = strtotime($event['event_date']) < time();
 $isToday = date('Y-m-d', strtotime($event['event_date'])) === date('Y-m-d');
 $flashes = flash_get();
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= e($event['title']) ?> - Administration</title>
-    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head($event['title'], ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
+    <main class="s-wrap">
         <div class="a-page-head">
             <div style="min-width:0;">
                 <a class="a-link" href="events.php">← Parties</a>
@@ -198,7 +189,7 @@ $flashes = flash_get();
                                 <td class="t-head">
                                     <span class="t-title"><?= e($r['pseudo'] ?: 'Invité') ?></span>
                                     <span class="t-sub">
-                                        <?= $missing ? '⚠️ Nom à compléter par ' . e($r['buyer_name'] ?? 'l\'acheteur') : e($r['full_name']) ?>
+                                        <?= $missing ? ui_icon('alert', 14) . ' Nom à compléter par ' . e($r['buyer_name'] ?? 'l\'acheteur') : e($r['full_name']) ?>
                                         <?php if (!$r['user_id'] && !$missing): ?> · invité de <?= e($r['buyer_name'] ?? '?') ?><?php endif; ?>
                                     </span>
                                 </td>

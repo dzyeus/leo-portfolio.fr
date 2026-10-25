@@ -56,26 +56,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $flashes = flash_get();
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Connexion - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="shortcut icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<?php site_head('Connexion', ['noindex' => true]); include 'includes/header.php'; ?>
 
-    <main class="auth-container">
-        <div class="auth-box">
-            <h1>Connexion</h1>
+    <main class="s-wrap">
+        <div class="s-auth"><div class="a-card">
+            <div class="s-auth-head"><img src="images/logo.png" alt="" width="64" height="64"><h1>Connexion</h1><p>Content de te revoir sur le terrain.</p></div>
 
-            <?php foreach ($flashes as $flash): ?>
-                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
-            <?php endforeach; ?>
+            <?php render_flashes($flashes); ?>
 
             <?php if ($error): ?>
                 <div class="alert alert-error">
@@ -86,27 +73,27 @@ $flashes = flash_get();
                 </div>
             <?php endif; ?>
 
-            <form method="POST" action="login.php" class="auth-form">
+            <form method="POST" action="login.php" class="s-form">
                 <?= csrf_field() ?>
                 <input type="hidden" name="return" value="<?= e($return) ?>">
-                <div class="form-group">
+                <div class="s-field">
                     <label for="email">Email</label>
                     <input type="email" id="email" name="email" required autocomplete="email"
                            value="<?= e($_POST['email'] ?? '') ?>">
                 </div>
 
-                <div class="form-group">
+                <div class="s-field">
                     <label for="password">Mot de passe</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
 
-                <button type="submit" class="btn btn-primary">Se connecter</button>
+                <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block">Se connecter</button>
             </form>
 
-            <p class="auth-link"><a href="forgot_password.php">Mot de passe oublié ?</a></p>
-            <p class="auth-link">Pas encore de compte ?
+            <p class="s-auth-link"><a href="forgot_password.php">Mot de passe oublié ?</a></p>
+            <p class="s-auth-link">Pas encore de compte ?
                 <a href="register.php<?= $return ? '?return=' . urlencode($return) : '' ?>">Créer un compte</a></p>
-        </div>
+        </div></div>
     </main>
 
     <?php include 'includes/footer.php'; ?>

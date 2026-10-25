@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     flash_set('success', 'Places réservées ! Renseigne maintenant tes invités pour générer leurs billets.');
                     redirect('order.php?id=' . $order['id']);
                 }
-                flash_set('success', 'Inscription réussie ! 🎫 Ton billet t\'a été envoyé par email.');
+                flash_set('success', 'Inscription réussie ! Ton billet t\'a été envoyé par email.');
                 redirect('event.php?id=' . $event_id);
             }
 
@@ -106,7 +106,7 @@ $flashes = flash_get();
 
 // Liste des inscrits (visible pour tous) : joueurs et invités
 $stmt = $pdo->prepare("
-    SELECT r.team, COALESCE(r.pseudo, u.pseudo) AS pseudo, u.profile_picture
+    SELECT r.team, COALESCE(r.pseudo, u.pseudo) AS pseudo, u.profile_picture, r.user_id
     FROM registrations r
     LEFT JOIN users u ON r.user_id = u.id
     WHERE r.event_id = ?
@@ -121,259 +121,215 @@ foreach ($event['teams'] as $team_info) {
 }
 foreach ($registrations as $reg) {
     $teams[$reg['team']][] = [
-        'pseudo' => $reg['pseudo'] ?: 'Invité',
-        'picture' => $reg['profile_picture']
+        'pseudo'  => $reg['pseudo'] ?: 'Invité',
+        'picture' => $reg['profile_picture'],
+        'guest'   => empty($reg['user_id']),
     ];
 }
 
 $max_places = (int)MAX_PLACES_PER_ORDER;
 $price_label = $is_free ? 'Gratuit' : format_price((int)$event['price_cents']) . ' par place';
+$teams_by_key = array_column($event['teams'], null, 'team_key');
+$total_taken = (int)array_sum(array_column($event['teams'], 'current_players'));
+$total_capacity = (int)array_sum(array_column($event['teams'], 'max_players'));
+$is_gps = location_is_gps($event['location']);
+$event_past = strtotime($event['event_date']) < time();
+$my_team_name = $user_registration ? ($teams_by_key[$user_registration['team']]['team_name'] ?? $user_registration['team']) : '';
+$can_unregister = $user_registration && !$event_started
+    && (empty($user_registration['order_status']) || $user_registration['order_status'] === 'free');
+$return_url = 'event.php?id=' . $event_id;
 
-/** Bloc d'inscription (affiché deux fois : version mobile et version ordinateur). */
-function render_registration_box(array $event, ?array $user_registration, bool $registration_open, bool $is_free, int $max_places, string $price_label, string $suffix): void
-{
-    if (!isLoggedIn()) { ?>
-        <div class="registration-box">
-            <h3>Rejoindre la partie</h3>
-            <p><strong><?= e($price_label) ?></strong></p>
-            <p>Connecte-toi ou crée un compte pour réserver ta place.</p>
-            <a href="login.php?return=<?= urlencode('event.php?id=' . $event['id']) ?>" class="btn btn-primary btn-block">Se connecter</a>
-            <p style="text-align:center;margin-top:var(--spacing-sm);">
-                <a href="register.php?return=<?= urlencode('event.php?id=' . $event['id']) ?>">Créer un compte</a>
-            </p>
-        </div>
-    <?php return; }
-
-    if (!$registration_open) { ?>
-        <div class="alert alert-warning">Inscriptions fermées</div>
-    <?php return; } ?>
-
-    <div class="registration-box">
-        <h3><?= $user_registration ? 'Ajouter des invités' : 'Rejoindre la partie' ?></h3>
-        <p><strong><?= e($price_label) ?></strong></p>
-        <form method="POST" class="registration-form" data-price="<?= $is_free ? 0 : (int)$event['price_cents'] ?>">
-            <?= csrf_field() ?>
-            <input type="hidden" name="action" value="book">
-
-            <div class="form-group">
-                <label for="quantity<?= $suffix ?>">
-                    <?= $user_registration ? 'Nombre d\'invités' : 'Nombre de places (toi + tes invités)' ?>
-                </label>
-                <select id="quantity<?= $suffix ?>" name="quantity" class="quantity-select">
-                    <?php for ($q = 1; $q <= $max_places; $q++): ?>
-                        <option value="<?= $q ?>"><?= $q ?><?= $is_free ? '' : ' – ' . e(format_price($q * (int)$event['price_cents'])) ?></option>
-                    <?php endfor; ?>
-                </select>
-                <?php if (!$is_free): ?>
-                    <small>Paiement sécurisé par carte (Stripe). Tu renseigneras tes invités juste après.</small>
-                <?php endif; ?>
-            </div>
-
-            <div class="form-group-checkbox">
-                <input type="checkbox" id="accept_terms<?= $suffix ?>" name="accept_terms" value="1" required>
-                <label for="accept_terms<?= $suffix ?>">
-                    J'accepte les <a href="cgv.php" target="_blank">conditions générales</a><?= $is_free ? '' : ' et je reconnais que, s\'agissant d\'une activité de loisirs à date fixe, je ne dispose pas de droit de rétractation (art. L221-28 12° du Code de la consommation)' ?>.
-                </label>
-            </div>
-
-            <p>Choisissez votre équipe :</p>
-            <?php foreach ($event['teams'] as $team): ?>
-                <?php $is_full = $team['current_players'] >= $team['max_players']; ?>
-                <button type="submit" name="team" value="<?= e($team['team_key']) ?>"
-                        class="btn-team"
-                        style="border-left: 4px solid <?= e($team['team_color']) ?>"
-                        <?= $is_full ? 'disabled' : '' ?>>
-                    <?= e($team['team_name']) ?>
-                    <span class="team-count"><?= $team['current_players'] ?>/<?= $team['max_players'] ?></span>
-                    <?php if ($is_full): ?>
-                        <span class="team-full">COMPLET</span>
-                    <?php endif; ?>
-                </button>
-            <?php endforeach; ?>
-        </form>
-    </div>
-<?php }
+site_head($event['title'], [
+    'description' => ucfirst(date_fr($event['event_date'])) . ' · ' . ($is_gps ? 'Partie d\'airsoft en forêt' : $event['location'])
+        . ' · ' . $price_label . '. ' . trim((string)$event['description']),
+]);
+include 'includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($event['title']) ?> - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="shortcut icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<main class="s-wrap">
+    <a class="s-back" href="events.php"><?= ui_icon('chevronleft', 18) ?> Toutes les parties</a>
 
-    <main class="container page-content">
-        <div class="event-detail">
-            <!-- En-tête de l'événement -->
-            <div class="event-detail-header">
-                <h1><?= htmlspecialchars($event['title']) ?></h1>
-                <div class="event-meta-large">
-                    <span class="meta-item">
-                        <strong><?= icon('calendar') ?> Date:</strong> <?= date('l d F Y', strtotime($event['event_date'])) ?>
-                    </span>
-                    <span class="meta-item">
-                        <strong>🕐 Heure:</strong> <?= date('H:i', strtotime($event['event_date'])) ?>
-                    </span>
-                    <span class="meta-item">
-                        <strong>📍 Lieu:</strong> <?= htmlspecialchars($event['location']) ?>
-                    </span>
-                    <span class="meta-item">
-                        <strong>💶 Prix:</strong> <?= e($price_label) ?>
-                    </span>
-                </div>
-            </div>
+    <!-- En-tête de la partie -->
+    <section class="a-card s-event-hero">
+        <span class="s-kicker"><?= ui_icon('target', 15) ?>
+            <?= $event_past ? 'Partie terminée' : e(ucfirst(days_until_fr($event['event_date']))) ?></span>
+        <h1><?= e($event['title']) ?></h1>
+        <div class="s-facts">
+            <div class="s-fact"><?= ui_icon('calendar', 20) ?><div><span class="s-fact-label">Date</span>
+                <span class="s-fact-value"><?= e(ucfirst(date_fr($event['event_date'], false))) ?></span></div></div>
+            <div class="s-fact"><?= ui_icon('clock', 20) ?><div><span class="s-fact-label">Heure</span>
+                <span class="s-fact-value"><?= e(time_fr($event['event_date'])) ?></span></div></div>
+            <div class="s-fact"><?= ui_icon('pin', 20) ?><div><span class="s-fact-label">Lieu</span>
+                <span class="s-fact-value"><?= $is_gps ? 'Coordonnées GPS' : e($event['location']) ?></span>
+                <a class="s-small" href="<?= e(maps_url($event['location'])) ?>" target="_blank" rel="noopener"><?= $is_gps ? e($event['location']) . ' · ' : '' ?>Itinéraire ↗</a></div></div>
+            <div class="s-fact"><?= ui_icon('euro', 20) ?><div><span class="s-fact-label">Prix</span>
+                <span class="s-fact-value"><?= e($price_label) ?></span></div></div>
+        </div>
+    </section>
 
-            <?php foreach ($flashes as $flash): ?>
-                <div class="alert alert-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
-            <?php endforeach; ?>
-            
-            <?php if ($error): ?>
-                <div class="alert alert-error"><?= e($error) ?></div>
-            <?php endif; ?>
+    <div style="margin-top:1rem;">
+        <?php render_flashes($flashes); ?>
+        <?php if ($error): ?>
+            <div class="alert alert-error" role="alert"><?= e($error) ?></div>
+        <?php endif; ?>
+    </div>
 
-            <!-- Statut d'inscription de l'utilisateur -->
-            <?php if ($user_registration): ?>
-                <div class="alert alert-info">
-                    <?= icon('check') ?> Vous êtes inscrit au camp <strong><?= e($user_registration['team']) ?></strong>
-                    <?php if (!$event_started && (empty($user_registration['order_status']) || $user_registration['order_status'] === 'free')): ?>
-                        <form method="POST" style="display: inline-block; margin-left: 15px;">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="action" value="unregister">
-                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Êtes-vous sûr de vouloir vous désinscrire ?')">
-                                Se désinscrire
-                            </button>
-                        </form>
-                    <?php endif; ?>
-                </div>
-            <?php endif; ?>
+    <div class="s-event-layout">
+        <!-- Réservation -->
+        <aside class="s-area-book">
+            <div class="a-card s-book" id="reserver">
+                <div class="a-card-head"><h2><?= ui_icon('ticket', 18) ?> <?= $user_registration && $registration_open ? 'Ta place' : 'Réserver' ?></h2></div>
 
-            <?php if ($user_orders): ?>
-                <div class="alert alert-info">
-                    🎫 Mes réservations pour cette partie :
-                    <?php foreach ($user_orders as $o): ?>
-                        <a href="order.php?id=<?= (int)$o['id'] ?>" style="margin-left: 10px;">
-                            n° <?= (int)$o['id'] ?> (<?= (int)$o['quantity'] ?> place<?= $o['quantity'] > 1 ? 's' : '' ?>, <?= e(order_status_label($o['status'])) ?>)
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
-
-            <div class="event-detail-grid">
-                <!-- Colonne gauche: Informations -->
-                <div class="event-detail-content">
-                    <section class="event-section">
-                        <h2><?= icon('list') ?> Description</h2>
-                        <p><?= nl2br(htmlspecialchars($event['description'])) ?></p>
-                    </section>
-
-                    <section class="event-section">
-                        <h2><?= icon('target') ?> Scénario</h2>
-                        <div class="scenario-box">
-                            <?= nl2br(htmlspecialchars($event['scenario'])) ?>
-                        </div>
-                    </section>
-
-                    <?php if ($event['equipment_required']): ?>
-                    <section class="event-section">
-                        <h2>🎒 Matériel recommandé</h2>
-                        <p><?= nl2br(htmlspecialchars($event['equipment_required'])) ?></p>
-                    </section>
-                    <?php endif; ?>
-
-                    <?php if ($event['rules']): ?>
-                    <section class="event-section">
-                        <h2>📜 Règles spéciales</h2>
-                        <p><?= nl2br(htmlspecialchars($event['rules'])) ?></p>
-                    </section>
-                    <?php endif; ?>
-                    
-                    <!-- Inscription et équipes en mobile -->
-                    <div class="event-detail-sidebar-mobile">
-                        <!-- Inscription -->
-                        <?php render_registration_box($event, $user_registration, $registration_open, $is_free, $max_places, $price_label, '_m'); ?>
-
-                        <!-- Liste des inscrits -->
-                        <div class="players-list">
-                            <h3><?= icon('users') ?> Joueurs inscrits</h3>
-                            
-                            <?php foreach ($event['teams'] as $team_info): ?>
-                                <?php $team_key = $team_info['team_key']; ?>
-                                <div class="team-list">
-                                    <h4 class="team-title" style="border-left: 4px solid <?= htmlspecialchars($team_info['team_color']) ?>">
-                                        <?= htmlspecialchars($team_info['team_name']) ?> 
-                                        (<?= isset($teams[$team_key]) ? count($teams[$team_key]) : 0 ?>/<?= $team_info['max_players'] ?>)
-                                    </h4>
-                                    <?php if (empty($teams[$team_key])): ?>
-                                        <p class="no-players">Aucun joueur inscrit</p>
-                                    <?php else: ?>
-                                        <div class="team-players">
-                                            <?php foreach ($teams[$team_key] as $player): ?>
-                                                <div class="player-item">
-                                                    <?php if ($player['picture']): ?>
-                                                        <img src="<?= htmlspecialchars($player['picture']) ?>" alt="<?= htmlspecialchars($player['pseudo']) ?>" class="player-mini-avatar">
-                                                    <?php else: ?>
-                                                        <div class="player-mini-avatar"><?= icon('user') ?></div>
-                                                    <?php endif; ?>
-                                                    <span><?= htmlspecialchars($player['pseudo']) ?></span>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Colonne droite: Inscription et équipes (Desktop seulement) -->
-                <div class="event-detail-sidebar">
-                    <!-- Inscription -->
-                    <?php render_registration_box($event, $user_registration, $registration_open, $is_free, $max_places, $price_label, '_d'); ?>
-
-                    <!-- Liste des inscrits -->
-                    <div class="players-list">
-                        <h3><?= icon('users') ?> Joueurs inscrits</h3>
-                        
-                        <?php foreach ($event['teams'] as $team_info): ?>
-                            <?php $team_key = $team_info['team_key']; ?>
-                            <div class="team-list">
-                                <h4 class="team-title" style="border-left: 4px solid <?= htmlspecialchars($team_info['team_color']) ?>">
-                                    <?= htmlspecialchars($team_info['team_name']) ?> 
-                                    (<?= isset($teams[$team_key]) ? count($teams[$team_key]) : 0 ?>/<?= $team_info['max_players'] ?>)
-                                </h4>
-                                <?php if (empty($teams[$team_key])): ?>
-                                    <p class="no-players">Aucun joueur inscrit</p>
-                                <?php else: ?>
-                                    <div class="team-players">
-                                        <?php foreach ($teams[$team_key] as $player): ?>
-                                            <div class="player-item">
-                                                <?php if ($player['picture']): ?>
-                                                    <img src="<?= htmlspecialchars($player['picture']) ?>" alt="<?= htmlspecialchars($player['pseudo']) ?>" class="player-mini-avatar">
-                                                <?php else: ?>
-                                                    <div class="player-mini-avatar"><?= icon('user') ?></div>
-                                                <?php endif; ?>
-                                                <span><?= htmlspecialchars($player['pseudo']) ?></span>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
+                <?php if ($user_registration): ?>
+                    <div class="s-status">
+                        <?= ui_icon('check', 20) ?>
+                        <div>
+                            <strong>Tu es inscrit · <?= e($my_team_name) ?></strong>
+                            <span class="s-small s-muted">Ton billet (QR code) est dans tes emails et dans ton espace.</span>
+                            <div class="s-status-actions">
+                                <?php foreach ($user_orders as $o): ?>
+                                    <a class="a-btn a-btn-sm" href="order.php?id=<?= (int)$o['id'] ?>"><?= ui_icon('ticket', 16) ?> Réservation n° <?= (int)$o['id'] ?>
+                                        (<?= (int)$o['quantity'] ?> place<?= $o['quantity'] > 1 ? 's' : '' ?>)</a>
+                                <?php endforeach; ?>
+                                <?php if ($can_unregister): ?>
+                                    <form method="POST" class="a-inline" data-confirm="Te désinscrire de cette partie ?">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="unregister">
+                                        <button type="submit" class="a-btn a-btn-sm a-btn-danger">Se désinscrire</button>
+                                    </form>
                                 <?php endif; ?>
                             </div>
-                        <?php endforeach; ?>
+                        </div>
                     </div>
-                </div>
-            </div>
+                <?php elseif ($user_orders): ?>
+                    <div class="s-status">
+                        <?= ui_icon('ticket', 20) ?>
+                        <div><strong>Tes réservations</strong>
+                            <div class="s-status-actions">
+                                <?php foreach ($user_orders as $o): ?>
+                                    <a class="a-btn a-btn-sm" href="order.php?id=<?= (int)$o['id'] ?>">n° <?= (int)$o['id'] ?> · <?= (int)$o['quantity'] ?> place<?= $o['quantity'] > 1 ? 's' : '' ?> · <?= e(order_status_label($o['status'])) ?></a>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
-            <div class="event-detail-footer">
-                <a href="events.php" class="btn btn-secondary">← Retour à l'agenda</a>
+                <?php if (!$registration_open): ?>
+                    <div class="s-status is-closed">
+                        <?= ui_icon('lock', 20) ?>
+                        <div><strong><?= $event_past ? 'Cette partie est terminée' : 'Inscriptions fermées' ?></strong>
+                            <span class="s-small s-muted"><?= $event_past ? 'Retrouve les prochaines parties dans l\'agenda.' : 'Les réservations ne sont pas ouvertes pour cette partie.' ?></span></div>
+                    </div>
+                <?php elseif (!isLoggedIn()): ?>
+                    <div class="s-book-price"><span class="s-price"><?= $is_free ? 'Gratuit' : e(format_price((int)$event['price_cents'])) ?></span>
+                        <?php if (!$is_free): ?><span class="s-muted">par place</span><?php endif; ?></div>
+                    <p class="s-muted" style="margin-bottom:1rem;">Connecte-toi ou crée ton compte pour réserver ta place et recevoir ton billet.</p>
+                    <div class="s-stack" style="display:grid;gap:0.5rem;">
+                        <a href="login.php?return=<?= urlencode($return_url) ?>" class="a-btn a-btn-primary a-btn-lg a-btn-block"><?= ui_icon('login', 18) ?> Se connecter</a>
+                        <a href="register.php?return=<?= urlencode($return_url) ?>" class="a-btn a-btn-lg a-btn-block">Créer un compte</a>
+                    </div>
+                <?php else: ?>
+                    <div class="s-book-price"><span class="s-price"><?= $is_free ? 'Gratuit' : e(format_price((int)$event['price_cents'])) ?></span>
+                        <?php if (!$is_free): ?><span class="s-muted">par place</span><?php endif; ?></div>
+                    <form method="POST" class="s-form" data-booking data-price="<?= $is_free ? 0 : (int)$event['price_cents'] ?>"<?= $user_registration ? ' data-guests="1"' : '' ?>>
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="book">
+
+                        <div class="s-field" style="margin-top:0.75rem;">
+                            <label for="quantity"><?= $user_registration ? 'Nombre d\'invités à ajouter' : 'Nombre de places (toi + tes invités)' ?></label>
+                            <select id="quantity" name="quantity">
+                                <?php for ($q = 1; $q <= $max_places; $q++): ?>
+                                    <option value="<?= $q ?>"><?= $q ?> place<?= $q > 1 ? 's' : '' ?><?= $is_free ? '' : ' – ' . e(format_price($q * (int)$event['price_cents'])) ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <?php if (!$is_free): ?><span class="s-hint">Tu renseigneras le nom de tes invités juste après le paiement.</span><?php endif; ?>
+                        </div>
+
+                        <div class="s-check">
+                            <input type="checkbox" id="accept_terms" name="accept_terms" value="1" required>
+                            <label for="accept_terms">J'accepte les <a href="cgv.php" target="_blank">conditions générales</a><?= $is_free ? '' : ' et je reconnais que, s\'agissant d\'une activité de loisirs à date fixe, je ne dispose pas de droit de rétractation (art. L221-28 12° du Code de la consommation)' ?>.</label>
+                        </div>
+
+                        <span class="s-label"><?= $user_registration ? 'Équipe de tes invités' : 'Choisis ton équipe' ?></span>
+                        <div class="s-team-pick" style="margin-top:0.5rem;">
+                            <?php foreach ($event['teams'] as $team):
+                                $is_full = $team['current_players'] >= $team['max_players']; ?>
+                                <button type="submit" name="team" value="<?= e($team['team_key']) ?>" class="s-team-btn"
+                                        data-team-name="<?= e($team['team_name']) ?>" <?= $is_full ? 'disabled' : '' ?>>
+                                    <span class="s-team-stripe" style="background:<?= e(safe_color($team['team_color'])) ?>"></span>
+                                    <span class="s-team-name"><?= e($team['team_name']) ?></span>
+                                    <span class="s-team-count"><?= $is_full ? '<span class="s-team-full">Complet</span> ' : '' ?><?= (int)$team['current_players'] ?>/<?= (int)$team['max_players'] ?></span>
+                                    <?= ui_progress((int)$team['current_players'], (int)$team['max_players'], $team['team_color']) ?>
+                                </button>
+                            <?php endforeach; ?>
+                        </div>
+                        <p class="s-book-note"><?= ui_icon('lock', 16) ?>
+                            <span><?= $is_free ? 'Inscription gratuite : ton billet t\'est envoyé par email tout de suite.' : 'Paiement sécurisé par carte avec Stripe. Reçu et billets envoyés par email.' ?></span></p>
+                    </form>
+                <?php endif; ?>
             </div>
+        </aside>
+
+        <!-- Informations -->
+        <div class="s-area-main s-stack">
+            <?php if (trim((string)$event['description']) !== ''): ?>
+                <section class="a-card">
+                    <div class="a-card-head"><h2><?= ui_icon('info', 18) ?> Présentation</h2></div>
+                    <div class="s-prose"><?= nl2br(e($event['description'])) ?></div>
+                </section>
+            <?php endif; ?>
+            <?php if (trim((string)$event['scenario']) !== ''): ?>
+                <section class="a-card">
+                    <div class="a-card-head"><h2><?= ui_icon('target', 18) ?> Scénario</h2></div>
+                    <div class="s-prose s-quote"><?= nl2br(e($event['scenario'])) ?></div>
+                </section>
+            <?php endif; ?>
+            <?php if (trim((string)$event['equipment_required']) !== ''): ?>
+                <section class="a-card">
+                    <div class="a-card-head"><h2><?= ui_icon('backpack', 18) ?> Matériel recommandé</h2></div>
+                    <div class="s-prose"><?= nl2br(e($event['equipment_required'])) ?></div>
+                </section>
+            <?php endif; ?>
+            <?php if (trim((string)$event['rules']) !== ''): ?>
+                <section class="a-card">
+                    <div class="a-card-head"><h2><?= ui_icon('shield', 18) ?> Règles spéciales</h2></div>
+                    <div class="s-prose"><?= nl2br(e($event['rules'])) ?></div>
+                </section>
+            <?php endif; ?>
         </div>
-    </main>
 
-    <?php include 'includes/footer.php'; ?>
+        <!-- Joueurs inscrits -->
+        <aside class="s-area-roster">
+            <section class="a-card">
+                <div class="a-card-head">
+                    <h2><?= ui_icon('users', 18) ?> Joueurs inscrits</h2>
+                    <span class="a-badge st-muted"><?= $total_taken ?>/<?= $total_capacity ?></span>
+                </div>
+                <?php foreach ($event['teams'] as $team_info):
+                    $team_key = $team_info['team_key'];
+                    $players = $teams[$team_key] ?? []; ?>
+                    <div class="s-roster-team">
+                        <div class="s-roster-head">
+                            <span><i class="s-dot" style="background:<?= e(safe_color($team_info['team_color'])) ?>"></i><?= e($team_info['team_name']) ?></span>
+                            <span class="s-roster-count">(<?= count($players) ?>/<?= (int)$team_info['max_players'] ?>)</span>
+                        </div>
+                        <?php if (!$players): ?>
+                            <p class="s-roster-empty">Aucun joueur pour l'instant.</p>
+                        <?php else: ?>
+                            <div class="s-players">
+                                <?php foreach ($players as $player): ?>
+                                    <span class="s-player<?= $player['guest'] ? ' s-player-guest' : '' ?>">
+                                        <span class="s-avatar"><?php if ($player['picture']): ?><img src="<?= e($player['picture']) ?>" alt="" loading="lazy"><?php else: ?><?= e(initial($player['pseudo'])) ?><?php endif; ?></span>
+                                        <?= e($player['pseudo']) ?>
+                                    </span>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </section>
+        </aside>
+    </div>
+</main>
+<?php include 'includes/footer.php'; ?>
 </body>
 </html>

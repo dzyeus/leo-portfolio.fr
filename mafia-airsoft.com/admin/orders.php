@@ -76,19 +76,10 @@ $stmt->execute($params);
 $eventsList = $pdo->query("SELECT id, title, event_date FROM events ORDER BY event_date DESC")->fetchAll(PDO::FETCH_ASSOC);
 $flashes = flash_get();
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Réservations - Administration</title>
-    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head('Réservations', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
+    <main class="s-wrap">
         <div class="a-page-head">
             <div>
                 <h1>Réservations</h1>

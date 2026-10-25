@@ -112,77 +112,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supprimer - <?= htmlspecialchars($event['title']) ?></title>
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head('Supprimer · ' . $event['title'], ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
-        <div class="auth-box" style="max-width: 650px;">
-            <h1 style="color: var(--danger);"><?= icon('warning') ?> Supprimer la partie</h1>
-
-            <?php if ($error): ?>
-                <div class="alert alert-error"><?= e($error) ?></div>
-            <?php endif; ?>
-
-            <div class="alert alert-warning">
-                <h3 style="margin: 0 0 0.5rem;"><?= e($event['title']) ?></h3>
-                <p><?= e(ucfirst(date_fr($event['event_date']))) ?> · <?= e($event['location']) ?></p>
-                <ul style="margin: 0.75rem 0 0 1.2rem; line-height: 1.8;">
-                    <li><?= $registrationsCount ?> inscrit(s) / place(s) et leurs billets seront supprimés</li>
-                    <?php if ($paidCount > 0): ?>
-                        <li><strong><?= $paidCount ?> réservation(s) payée(s) pour <?= e(format_price($paidTotal)) ?></strong> :
-                            le site ne rembourse pas automatiquement, il faudra le faire dans Stripe.
-                            Stripe garde l'historique de ces paiements.</li>
-                    <?php endif; ?>
-                </ul>
-                <p style="margin-top: 0.75rem;">Cette action est <strong>irréversible</strong>.</p>
+    <main class="s-wrap">
+        <div class="a-page-head">
+            <div>
+                <a class="a-link" href="view_event.php?id=<?= $event_id ?>">← Retour à la partie</a>
+                <h1>Supprimer la partie</h1>
+                <div class="a-sub"><?= e($event['title']) ?> · <?= e(ucfirst(date_fr($event['event_date']))) ?> · <?= e($event['location']) ?></div>
             </div>
+        </div>
 
-            <form method="POST" class="auth-form" style="margin-top: var(--spacing-lg);">
-                <input type="hidden" name="id" value="<?= $event_id ?>">
-                <input type="hidden" name="action" value="delete">
+        <?php if ($error): ?>
+            <div class="alert alert-error a-flash" role="alert"><?= e($error) ?></div>
+        <?php endif; ?>
 
-                <?php if ($isUpcoming && $registrationsCount > 0): ?>
-                    <div class="form-group-checkbox">
-                        <input type="checkbox" id="notify" name="notify" value="1" checked>
-                        <label for="notify">Prévenir les inscrits par email que la partie est annulée</label>
+        <div class="a-grid a-grid-main">
+            <section class="a-card a-danger-card">
+                <div class="a-card-head"><h2><?= ui_icon('alert', 18) ?> Suppression définitive</h2></div>
+                <ul class="a-list-plain">
+                    <li><?= ui_icon('users', 16) ?> <?= $registrationsCount ?> inscrit(s) / place(s) et leurs billets seront supprimés</li>
+                    <?php if ($paidCount > 0): ?>
+                        <li><?= ui_icon('euro', 16) ?> <span><strong><?= $paidCount ?> réservation(s) payée(s) pour <?= e(format_price($paidTotal)) ?></strong> :
+                            le site ne rembourse pas automatiquement, il faudra le faire dans Stripe. Stripe garde l'historique de ces paiements.</span></li>
+                    <?php endif; ?>
+                    <li><?= ui_icon('alert', 16) ?> Cette action est <strong>irréversible</strong>.</li>
+                </ul>
+
+                <form method="POST" class="s-form" style="margin-top:1rem;">
+                    <input type="hidden" name="id" value="<?= $event_id ?>">
+                    <input type="hidden" name="action" value="delete">
+
+                    <?php if ($isUpcoming && $registrationsCount > 0): ?>
+                        <div class="s-check">
+                            <input type="checkbox" id="notify" name="notify" value="1" checked>
+                            <label for="notify">Prévenir les inscrits par email que la partie est annulée</label>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($paidCount > 0): ?>
+                        <div class="s-check">
+                            <input type="checkbox" id="refund_ack" name="refund_ack" value="1" required>
+                            <label for="refund_ack">Je rembourserai (ou j'ai déjà remboursé) les <?= $paidCount ?> paiement(s)
+                                depuis le Dashboard Stripe (Paiements › Rembourser).</label>
+                        </div>
+                    <?php endif; ?>
+
+                    <div class="s-field">
+                        <label for="confirm_title">Pour confirmer, tape <strong>SUPPRIMER</strong></label>
+                        <input type="text" id="confirm_title" name="confirm_title" required autocomplete="off" pattern="SUPPRIMER" placeholder="SUPPRIMER">
                     </div>
-                <?php endif; ?>
 
-                <?php if ($paidCount > 0): ?>
-                    <div class="form-group-checkbox">
-                        <input type="checkbox" id="refund_ack" name="refund_ack" value="1" required>
-                        <label for="refund_ack">Je rembourserai (ou j'ai déjà remboursé) les <?= $paidCount ?> paiement(s)
-                            depuis le Dashboard Stripe (Paiements › Rembourser).</label>
+                    <div class="s-form-actions">
+                        <button type="submit" class="a-btn a-btn-danger a-btn-lg"><?= ui_icon('trash', 18) ?> Supprimer définitivement</button>
+                        <a href="view_event.php?id=<?= $event_id ?>" class="a-btn a-btn-lg">Annuler</a>
                     </div>
-                <?php endif; ?>
-
-                <div class="form-group">
-                    <label for="confirm_title">Pour confirmer, tape <strong>SUPPRIMER</strong></label>
-                    <input type="text" id="confirm_title" name="confirm_title" required autocomplete="off" pattern="SUPPRIMER">
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-danger btn-lg"><?= icon('trash') ?> Supprimer définitivement</button>
-                    <a href="view_event.php?id=<?= $event_id ?>" class="btn btn-secondary btn-lg">Annuler</a>
-                </div>
-            </form>
+                </form>
+            </section>
 
             <?php if ($event['is_active']): ?>
-                <form method="POST" style="margin-top: var(--spacing-lg); border-top: 1px solid var(--tactical-border); padding-top: var(--spacing-md);">
-                    <input type="hidden" name="id" value="<?= $event_id ?>">
-                    <input type="hidden" name="action" value="hide">
-                    <p style="margin-bottom: var(--spacing-sm);">Tu veux juste la retirer du site sans rien perdre ?</p>
-                    <button type="submit" class="btn btn-outline">👁️ Masquer la partie (réversible)</button>
-                    <small style="display:block; color:#a3a3a3; margin-top: 0.4rem;">Elle n'apparaît plus aux joueurs ; tu peux la réactiver depuis « Modifier ».</small>
-                </form>
+                <aside class="a-card">
+                    <div class="a-card-head"><h2><?= ui_icon('eyeoff', 18) ?> Plutôt la masquer ?</h2></div>
+                    <p class="s-muted" style="margin-bottom:1rem;">Elle disparaît du site et les inscriptions se ferment, mais tout est conservé. Tu peux la réactiver depuis « Modifier ».</p>
+                    <form method="POST">
+                        <input type="hidden" name="id" value="<?= $event_id ?>">
+                        <input type="hidden" name="action" value="hide">
+                        <button type="submit" class="a-btn a-btn-block"><?= ui_icon('eyeoff', 18) ?> Masquer la partie (réversible)</button>
+                    </form>
+                </aside>
             <?php endif; ?>
         </div>
     </main>

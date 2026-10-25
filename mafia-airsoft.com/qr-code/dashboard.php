@@ -5,10 +5,9 @@
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../config/session.php';
-require_once __DIR__ . '/../includes/icons.php';
 requireAdmin();
 
-// Récupérer l'événement sélectionné
+// Partie affichée : celle demandée, sinon la prochaine (ou la plus récente)
 $selectedEventId = isset($_GET['event']) ? (int)$_GET['event'] : null;
 
 // Récupérer tous les événements
@@ -22,6 +21,16 @@ $stmt = $pdo->query("
     ORDER BY e.event_date DESC
 ");
 $events = $stmt->fetchAll();
+if (!$selectedEventId && $events) {
+    $upcoming = array_filter($events, fn($ev) => strtotime($ev['event_date']) >= strtotime('today'));
+    $selectedEventId = (int)($upcoming ? end($upcoming)['id'] : $events[0]['id']);
+}
+$selectedEvent = null;
+foreach ($events as $ev) {
+    if ((int)$ev['id'] === (int)$selectedEventId) {
+        $selectedEvent = $ev;
+    }
+}
 
 // Statistiques pour l'événement sélectionné
 $tickets = [];
@@ -62,396 +71,114 @@ if ($selectedEventId) {
     $stats['rate'] = $stats['total'] > 0 ? round(($stats['scanned'] / $stats['total']) * 100, 1) : 0;
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion des Billets - MAT</title>
-    <link rel="stylesheet" href="../css/style.css">
-    <style>
-        .page-content {
-            padding-top: 120px;
-        }
-        
-        .dashboard-header {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            padding: 30px;
-            border-radius: var(--radius-lg);
-            margin-bottom: 30px;
-            box-shadow: var(--shadow-red);
-        }
-        
-        .dashboard-header h1 {
-            margin: 0 0 10px 0;
-            font-size: 32px;
-        }
-        
-        .quick-actions {
-            display: flex;
-            gap: 15px;
-            margin-top: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .quick-actions .btn {
-            flex: 1;
-            min-width: 200px;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .stat-card {
-            background: var(--tactical-surface);
-            padding: 25px;
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-md);
-            text-align: center;
-            border-left: 4px solid var(--primary);
-            border: 1px solid var(--tactical-border);
-        }
-        
-        .stat-card.success { border-left-color: var(--success); }
-        .stat-card.warning { border-left-color: var(--warning); }
-        .stat-card.primary { border-left-color: var(--primary); }
-        
-        .stat-number {
-            font-size: 48px;
-            font-weight: bold;
-            color: var(--gray-900);
-            margin-bottom: 10px;
-        }
-        
-        .stat-label {
-            color: var(--gray-600);
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .event-selector {
-            background: var(--tactical-surface);
-            padding: 25px;
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-md);
-            margin-bottom: 30px;
-            border: 1px solid var(--tactical-border);
-        }
-        
-        .event-selector h2 {
-            margin: 0 0 15px 0;
-            color: var(--gray-900);
-        }
-        
-        .event-selector select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid var(--tactical-border);
-            border-radius: var(--radius-md);
-            font-size: 16px;
-            background: var(--tactical-bg);
-            color: var(--gray-900);
-        }
-        
-        .tickets-table-container {
-            background: var(--tactical-surface);
-            padding: 25px;
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-md);
-            overflow-x: auto;
-            border: 1px solid var(--tactical-border);
-        }
-        
-        .tickets-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        .tickets-table th {
-            background: var(--tactical-bg);
-            padding: 15px;
-            text-align: left;
-            font-weight: 600;
-            color: var(--gray-900);
-            border-bottom: 2px solid var(--tactical-border);
-        }
-        
-        .tickets-table td {
-            padding: 15px;
-            border-bottom: 1px solid var(--tactical-border);
-            color: var(--gray-700);
-        }
-        
-        .tickets-table tr:hover {
-            background: var(--tactical-bg);
-        }
-        
-        .badge {
-            display: inline-block;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .badge-success {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .badge-warning {
-            background: #fff3cd;
-            color: #856404;
-        }
-        
-        .ticket-code {
-            font-family: 'Courier New', monospace;
-            background: var(--tactical-bg);
-            padding: 5px 10px;
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            color: var(--primary-light);
-            border: 1px solid var(--tactical-border);
-        }
-        
-        .no-data {
-            text-align: center;
-            padding: 50px;
-            color: #999;
-            font-size: 18px;
-        }
-        
-        .filter-tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .filter-tab {
-            padding: 10px 20px;
-            border: 2px solid var(--tactical-border);
-            background: var(--tactical-bg);
-            color: var(--gray-700);
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .filter-tab.active {
-            background: var(--primary);
-            color: white;
-            border-color: var(--primary);
-        }
-        
-        .search-box {
-            margin-bottom: 20px;
-        }
-        
-        .search-box input {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid var(--tactical-border);
-            border-radius: var(--radius-md);
-            font-size: 16px;
-            background: var(--tactical-bg);
-            color: var(--gray-900);
-        }
-        
-        @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            
-            .tickets-table {
-                font-size: 14px;
-            }
-            
-            .tickets-table th,
-            .tickets-table td {
-                padding: 10px 8px;
-            }
-        }
-    </style>
-</head>
-<body>
+<?php site_head('Billets', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
-        <!-- Header -->
-        <div class="dashboard-header">
-            <h1><?= icon('ticket', 'Billet') ?> Gestion des Billets</h1>
-            <p>Contrôlez et suivez tous les billets d'entrée</p>
-            
-            <div class="quick-actions">
-                <a href="scan.php" class="btn btn-secondary"><?= icon('camera', 'Scanner') ?> Scanner les billets</a>
-                <a href="../admin/index.php" class="btn btn-secondary">← Retour admin</a>
+    <main class="s-wrap">
+        <div class="a-page-head">
+            <div>
+                <h1>Billets</h1>
+                <div class="a-sub">Suivi des billets et des entrées<?= $selectedEvent ? ' · ' . e($selectedEvent['title']) . ' · ' . e(ucfirst(date_fr($selectedEvent['event_date']))) : '' ?></div>
+            </div>
+            <div class="a-actions">
+                <a href="scan.php" class="a-btn a-btn-primary"><?= ui_icon('scan', 18) ?> Scanner les billets</a>
+                <?php if ($selectedEvent): ?>
+                    <a href="../admin/view_event.php?id=<?= (int)$selectedEvent['id'] ?>#inscrits" class="a-btn"><?= ui_icon('users', 18) ?> Inscrits</a>
+                <?php endif; ?>
             </div>
         </div>
 
-        <!-- Sélecteur d'événement -->
-        <div class="event-selector">
-            <h2><?= icon('calendar', 'Calendrier') ?> Sélectionner un événement</h2>
-            <select onchange="window.location.href='?event=' + this.value">
-                <option value="">-- Choisir un événement --</option>
-                <?php foreach ($events as $event): ?>
-                    <option value="<?= $event['id'] ?>" <?= $selectedEventId == $event['id'] ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($event['title']) ?> 
-                        (<?= date('d/m/Y', strtotime($event['event_date'])) ?>) 
-                        - <?= $event['total_tickets'] ?> billets
-                    </option>
+        <form method="GET" class="a-filter">
+            <select name="event" aria-label="Partie" onchange="this.form.submit()">
+                <?php if (!$events): ?><option value="">Aucune partie</option><?php endif; ?>
+                <?php foreach ($events as $ev): ?>
+                    <option value="<?= (int)$ev['id'] ?>" <?= (int)$ev['id'] === (int)$selectedEventId ? 'selected' : '' ?>>
+                        <?= e(date('d/m/Y', strtotime($ev['event_date'])) . ' – ' . $ev['title'] . ' (' . (int)$ev['total_tickets'] . ' billet' . ((int)$ev['total_tickets'] > 1 ? 's' : '') . ')') ?></option>
                 <?php endforeach; ?>
             </select>
-        </div>
+            <noscript><button type="submit" class="a-btn">Afficher</button></noscript>
+        </form>
 
-        <?php if ($selectedEventId): ?>
-            <!-- Statistiques -->
-            <div class="stats-grid">
-                <div class="stat-card primary">
-                    <div class="stat-number"><?= $stats['total'] ?></div>
-                    <div class="stat-label">Total billets</div>
-                </div>
-                
-                <div class="stat-card success">
-                    <div class="stat-number"><?= $stats['scanned'] ?></div>
-                    <div class="stat-label"><?= icon('check', 'Validé') ?> Présents</div>
-                </div>
-                
-                <div class="stat-card warning">
-                    <div class="stat-number"><?= $stats['pending'] ?></div>
-                    <div class="stat-label"><?= icon('pending', 'Attente') ?> En attente</div>
-                </div>
-                
-                <div class="stat-card">
-                    <div class="stat-number"><?= $stats['rate'] ?>%</div>
-                    <div class="stat-label">Taux de présence</div>
-                </div>
+        <?php if ($selectedEvent): ?>
+            <div class="a-grid a-grid-4" style="margin-bottom:1rem;">
+                <div class="a-kpi"><span class="a-kpi-label"><?= ui_icon('ticket', 15) ?> Billets</span><span class="a-kpi-value"><?= (int)$stats['total'] ?></span></div>
+                <div class="a-kpi"><span class="a-kpi-label"><?= ui_icon('usercheck', 15) ?> Présents</span><span class="a-kpi-value"><?= (int)$stats['scanned'] ?></span></div>
+                <div class="a-kpi"><span class="a-kpi-label"><?= ui_icon('clock', 15) ?> En attente</span><span class="a-kpi-value"><?= (int)$stats['pending'] ?></span></div>
+                <div class="a-kpi"><span class="a-kpi-label"><?= ui_icon('activity', 15) ?> Présence</span>
+                    <span class="a-kpi-value"><?= e(str_replace('.', ',', (string)$stats['rate'])) ?> %</span>
+                    <?= admin_progress((int)$stats['scanned'], max(1, (int)$stats['total'])) ?></div>
             </div>
 
-            <!-- Filtres -->
-            <div class="tickets-table-container">
-                <div class="filter-tabs">
-                    <div class="filter-tab active" onclick="filterTickets('all')">
-                        Tous (<?= $stats['total'] ?>)
-                    </div>
-                    <div class="filter-tab" onclick="filterTickets('scanned')">
-                        ✅ Scannés (<?= $stats['scanned'] ?>)
-                    </div>
-                    <div class="filter-tab" onclick="filterTickets('pending')">
-                        ⏳ En attente (<?= $stats['pending'] ?>)
+            <section class="a-card">
+                <div class="a-toolbar">
+                    <nav class="a-tabs" aria-label="Filtrer les billets">
+                        <button type="button" class="a-tab is-active" data-filter="all">Tous <span class="a-count"><?= (int)$stats['total'] ?></span></button>
+                        <button type="button" class="a-tab" data-filter="scanned">Présents <span class="a-count"><?= (int)$stats['scanned'] ?></span></button>
+                        <button type="button" class="a-tab" data-filter="pending">En attente <span class="a-count"><?= (int)$stats['pending'] ?></span></button>
+                    </nav>
+                    <div class="a-search">
+                        <input type="search" id="ticketSearch" placeholder="Nom, pseudo, email ou code…" aria-label="Rechercher un billet">
                     </div>
                 </div>
 
-                <div class="search-box">
-                    <input type="text" id="search" placeholder="Rechercher par nom, email ou code..." onkeyup="searchTickets()">
-                </div>
-
-                <!-- Tableau des billets -->
-                <?php if (empty($tickets)): ?>
-                    <div class="no-data">
-                        <?= icon('empty', 'Vide') ?> Aucun billet pour cet événement
-                    </div>
+                <?php if (!$tickets): ?>
+                    <p class="a-empty">Aucun billet pour cette partie.</p>
                 <?php else: ?>
-                    <table class="tickets-table" id="tickets-table">
+                    <table class="rtable" id="ticketTable">
                         <thead>
-                            <tr>
-                                <th>Statut</th>
-                                <th>Code</th>
-                                <th>Participant</th>
-                                <th>Email</th>
-                                <th>Créé le</th>
-                                <th>Scanné le</th>
-                                <th>Scanné par</th>
-                            </tr>
+                            <tr><th>Participant</th><th>Statut</th><th>Code</th><th>Contact</th><th>Créé le</th><th>Entrée</th></tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($tickets as $ticket): ?>
-                                <tr data-status="<?= $ticket['is_scanned'] ? 'scanned' : 'pending' ?>">
-                                    <td>
-                                        <?php if ($ticket['is_scanned']): ?>
-                                            <span class="badge badge-success"><?= icon('check', 'Validé') ?> Scanné</span>
-                                        <?php else: ?>
-                                            <span class="badge badge-warning"><?= icon('pending', 'Attente') ?> En attente</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="ticket-code"><?= htmlspecialchars($ticket['ticket_code']) ?></span>
-                                    </td>
-                                    <td><?= htmlspecialchars($ticket['user_name']) ?></td>
-                                    <td><?= htmlspecialchars($ticket['user_email']) ?></td>
-                                    <td><?= date('d/m/Y H:i', strtotime($ticket['created_at'])) ?></td>
-                                    <td>
-                                        <?php if ($ticket['is_scanned']): ?>
-                                            <?= date('d/m/Y H:i', strtotime($ticket['scanned_at'])) ?>
-                                        <?php else: ?>
-                                            <span style="color: #999;">-</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php if ($ticket['scanned_by_name']): ?>
-                                            <?= htmlspecialchars($ticket['scanned_by_name']) ?>
-                                        <?php else: ?>
-                                            <span style="color: #999;">-</span>
-                                        <?php endif; ?>
-                                    </td>
+                            <?php foreach ($tickets as $t): ?>
+                                <tr data-status="<?= $t['is_scanned'] ? 'scanned' : 'pending' ?>"
+                                    data-search="<?= e(mb_strtolower($t['user_name'] . ' ' . $t['user_email'] . ' ' . $t['ticket_code'])) ?>">
+                                    <td class="t-head"><span class="t-title"><?= e($t['user_name']) ?></span></td>
+                                    <td data-label="Statut"><?= $t['is_scanned'] ? '<span class="a-badge st-ok">Présent</span>' : '<span class="a-badge st-warn">En attente</span>' ?></td>
+                                    <td data-label="Code"><code class="a-code"><?= e($t['ticket_code']) ?></code></td>
+                                    <td data-label="Contact"><span class="a-small"><?= e($t['user_email']) ?></span></td>
+                                    <td data-label="Créé le"><span><?= e(date('d/m/Y H\hi', strtotime($t['created_at']))) ?></span></td>
+                                    <td data-label="Entrée"><span><?= $t['scanned_at'] ? e(date('d/m H\hi', strtotime($t['scanned_at']))) . ($t['scanned_by_name'] ? ' · ' . e($t['scanned_by_name']) : '') : '—' ?></span></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                    <p class="a-empty" id="ticketEmpty" hidden>Aucun billet ne correspond.</p>
                 <?php endif; ?>
-            </div>
+            </section>
         <?php else: ?>
-            <div class="no-data" style="background: var(--tactical-surface); padding: 50px; border-radius: var(--radius-lg); border: 1px solid var(--tactical-border);">
-                <?= icon('calendar', 'Calendrier') ?> Sélectionnez un événement pour voir les billets
-            </div>
+            <section class="a-card"><p class="a-empty">Aucune partie pour l'instant.</p></section>
         <?php endif; ?>
     </main>
 
     <?php include '../includes/footer.php'; ?>
-
     <script>
-        function filterTickets(filter) {
-            const rows = document.querySelectorAll('#tickets-table tbody tr');
-            const tabs = document.querySelectorAll('.filter-tab');
-            
-            // Update active tab
-            tabs.forEach(tab => tab.classList.remove('active'));
-            event.target.classList.add('active');
-            
-            // Filter rows
-            rows.forEach(row => {
-                const status = row.getAttribute('data-status');
-                if (filter === 'all') {
-                    row.style.display = '';
-                } else {
-                    row.style.display = status === filter ? '' : 'none';
-                }
+    (function () {
+        var table = document.getElementById('ticketTable');
+        if (!table) { return; }
+        var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr'));
+        var search = document.getElementById('ticketSearch');
+        var empty = document.getElementById('ticketEmpty');
+        var filter = 'all';
+        function apply() {
+            var q = (search.value || '').trim().toLowerCase();
+            var shown = 0;
+            rows.forEach(function (row) {
+                var ok = (filter === 'all' || row.getAttribute('data-status') === filter)
+                    && (!q || row.getAttribute('data-search').indexOf(q) !== -1);
+                row.hidden = !ok;
+                if (ok) { shown++; }
             });
+            empty.hidden = shown > 0;
         }
-        
-        function searchTickets() {
-            const search = document.getElementById('search').value.toLowerCase();
-            const rows = document.querySelectorAll('#tickets-table tbody tr');
-            
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(search) ? '' : 'none';
+        document.querySelectorAll('[data-filter]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('[data-filter]').forEach(function (b) { b.classList.toggle('is-active', b === btn); });
+                filter = btn.getAttribute('data-filter');
+                apply();
             });
-        }
-        
-        // Auto-refresh toutes les 30 secondes
-        setInterval(() => {
-            if (window.location.search.includes('event=')) {
-                location.reload();
-            }
-        }, 30000);
+        });
+        search.addEventListener('input', apply);
+    })();
     </script>
 </body>
 </html>

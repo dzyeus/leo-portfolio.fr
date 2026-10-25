@@ -1,13 +1,2 @@
-# Permettre l'accès aux fichiers PHP
-<FilesMatch "\.php$">
-    Require all granted
-</FilesMatch>
-
-# Permettre l'accès uniquement aux admins pour scan.php et dashboard.php
-# (la vérification se fait dans le PHP)
-
-# Activer le module rewrite
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteBase /MAT/qr-code/
-</IfModule>
+# Pages du scanner : l'accès est vérifié dans le PHP (administrateurs uniquement)
+Options -Indexes

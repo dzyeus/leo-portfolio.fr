@@ -12,81 +12,58 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute();
 $posts = $stmt->fetchAll();
+
+/** Extrait d'un article (texte brut, 170 caractères). */
+function post_excerpt(array $post): string
+{
+    $text = trim((string)($post['excerpt'] ?? ''));
+    if ($text === '') {
+        $text = trim(preg_replace('/\s+/', ' ', strip_tags((string)$post['content'])));
+    }
+    return mb_strimwidth($text, 0, 170, '…');
+}
+
+site_head('Blog', ['description' => 'Actualités, comptes-rendus de parties et conseils airsoft de la Mafia Airsoft Team.']);
+include 'includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blog - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="shortcut icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<main class="s-wrap">
+    <div class="a-page-head">
+        <div>
+            <h1>Blog</h1>
+            <div class="a-sub">Actualités, comptes-rendus de parties et conseils airsoft.</div>
+        </div>
+    </div>
 
-    <main class="container page-content">
-        <h1><?= icon('edit') ?> Blog Mafia Airsoft Team</h1>
-        <p class="page-subtitle">Actualités, comptes-rendus de parties et conseils airsoft</p>
-
-        <?php if (empty($posts)): ?>
-            <div class="no-data">
-                <p>Aucun article publié pour le moment.</p>
-            </div>
-        <?php else: ?>
-            <div class="blog-grid">
-                <?php foreach ($posts as $post): ?>
-                    <article class="blog-card">
-                        <?php if ($post['featured_image']): ?>
-                            <div class="blog-card-image" style="background-image: url('<?= htmlspecialchars($post['featured_image']) ?>');">
-                            </div>
-                        <?php else: ?>
-                            <div class="blog-card-image" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                                <div style="display: flex; align-items: center; justify-content: center; height: 100%; font-size: 48px;">
-                                    <?= icon('edit') ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <div class="blog-card-content">
-                            <div class="blog-card-meta">
-                                <div class="author-info">
-                                    <?php if ($post['author_picture']): ?>
-                                        <img src="<?= htmlspecialchars($post['author_picture']) ?>" alt="<?= htmlspecialchars($post['author_name']) ?>" class="author-avatar">
-                                    <?php else: ?>
-                                        <div class="author-avatar"><?= icon('user') ?></div>
-                                    <?php endif; ?>
-                                    <span><?= htmlspecialchars($post['author_name']) ?></span>
-                                </div>
-                                <span class="blog-date">
-                                    <?= icon('calendar') ?> <?= date('d/m/Y', strtotime($post['published_at'])) ?>
-                                </span>
-                            </div>
-                            
-                            <h2 class="blog-card-title">
-                                <a href="blog_post.php?slug=<?= htmlspecialchars($post['slug']) ?>">
-                                    <?= htmlspecialchars($post['title']) ?>
-                                </a>
-                            </h2>
-                            
-                            <p class="blog-card-excerpt">
-                                <?= htmlspecialchars($post['excerpt'] ?? substr(strip_tags($post['content']), 0, 150)) ?>...
-                            </p>
-                            
-                            <div class="blog-card-footer">
-                                <a href="blog_post.php?slug=<?= htmlspecialchars($post['slug']) ?>" class="btn btn-outline">
-                                    Lire la suite →
-                                </a>
-                                <span class="blog-views"><?= icon('eye') ?> <?= $post['views'] ?> vues</span>
-                            </div>
+    <?php if (!$posts): ?>
+        <div class="a-card s-empty">
+            <?= ui_icon('file', 40) ?>
+            <p>Aucun article publié pour le moment. Reviens bientôt !</p>
+        </div>
+    <?php else: ?>
+        <div class="s-blog-grid">
+            <?php foreach ($posts as $post):
+                $url = 'blog_post.php?slug=' . rawurlencode((string)$post['slug']);
+                $date = (string)($post['published_at'] ?: ($post['created_at'] ?? 'now')); ?>
+                <article class="a-card s-post">
+                    <?php if ($post['featured_image']): ?>
+                        <img class="s-post-img" src="<?= e($post['featured_image']) ?>" alt="" loading="lazy">
+                    <?php else: ?>
+                        <div class="s-placeholder"><img src="images/logo.png" alt="" loading="lazy"></div>
+                    <?php endif; ?>
+                    <div class="s-post-body">
+                        <div class="s-post-meta">
+                            <span><?= ui_icon('calendar', 15) ?> <?= e((int)date('j', strtotime($date)) . ' ' . fr_month($date) . ' ' . date('Y', strtotime($date))) ?></span>
+                            <span><?= ui_icon('user', 15) ?> <?= e($post['author_name']) ?></span>
                         </div>
-                    </article>
-                <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
-    </main>
-
-    <?php include 'includes/footer.php'; ?>
+                        <h2><a href="<?= e($url) ?>"><?= e($post['title']) ?></a></h2>
+                        <p><?= e(post_excerpt($post)) ?></p>
+                        <span class="s-post-more">Lire l'article <?= ui_icon('arrow', 16) ?></span>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+</main>
+<?php include 'includes/footer.php'; ?>
 </body>
 </html>

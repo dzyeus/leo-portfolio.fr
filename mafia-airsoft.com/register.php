@@ -85,25 +85,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Créer un compte - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="shortcut icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<?php site_head('Créer un compte', ['noindex' => true]); include 'includes/header.php'; ?>
 
-    <main class="auth-container">
-        <div class="auth-box">
-            <h1>Créer un compte</h1>
+    <main class="s-wrap">
+        <div class="s-auth s-auth-wide"><div class="a-card">
+            <div class="s-auth-head"><img src="images/logo.png" alt="" width="64" height="64"><h1>Créer un compte</h1><p>Ton compte sert à réserver tes places et recevoir tes billets.</p></div>
 
             <?php if ($done): ?>
-                <div class="alert alert-success">
+                <div class="alert alert-success" data-keep>
                     Compte créé ! Un email de confirmation a été envoyé à <strong><?= e($form['email']) ?></strong>.
                     Clique sur le lien qu'il contient pour activer ton compte.
                 </div>
@@ -113,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <a href="resend_verification.php?email=<?= urlencode($form['email']) ?>">Le renvoyer</a>
                     </div>
                 <?php endif; ?>
-                <p class="auth-link"><a href="login.php<?= $return ? '?return=' . urlencode($return) : '' ?>">Aller à la connexion</a></p>
+                <p class="s-auth-link"><a href="login.php<?= $return ? '?return=' . urlencode($return) : '' ?>">Aller à la connexion</a></p>
             <?php else: ?>
                 <?php if ($errors): ?>
                     <div class="alert alert-error">
@@ -123,76 +112,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 <?php endif; ?>
 
-                <form method="POST" action="register.php" class="auth-form" novalidate>
+                <form method="POST" action="register.php" class="s-form" novalidate>
                     <?= csrf_field() ?>
                     <input type="hidden" name="return" value="<?= e($return) ?>">
-                    <div style="position:absolute;left:-10000px;" aria-hidden="true">
+                    <div class="s-honeypot" aria-hidden="true">
                         <label for="website">Ne pas remplir</label>
                         <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
                     </div>
 
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="pseudo">Pseudo de jeu *</label>
                         <input type="text" id="pseudo" name="pseudo" required maxlength="30" autocomplete="nickname"
                                value="<?= e($form['pseudo']) ?>">
                     </div>
 
-                    <div class="form-row">
-                        <div class="form-group">
+                    <div class="s-form-row">
+                        <div class="s-field">
                             <label for="first_name">Prénom *</label>
                             <input type="text" id="first_name" name="first_name" required maxlength="100" autocomplete="given-name"
                                    value="<?= e($form['first_name']) ?>">
                         </div>
-                        <div class="form-group">
+                        <div class="s-field">
                             <label for="last_name">Nom *</label>
                             <input type="text" id="last_name" name="last_name" required maxlength="100" autocomplete="family-name"
                                    value="<?= e($form['last_name']) ?>">
                         </div>
                     </div>
 
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="email">Email *</label>
                         <input type="email" id="email" name="email" required maxlength="100" autocomplete="email"
                                value="<?= e($form['email']) ?>">
                     </div>
 
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="phone">Téléphone</label>
                         <input type="tel" id="phone" name="phone" maxlength="20" autocomplete="tel"
                                value="<?= e($form['phone']) ?>">
-                        <small>Facultatif, utile pour te prévenir en cas de changement le jour J.</small>
+                        <small class="s-hint">Facultatif, utile pour te prévenir en cas de changement le jour J.</small>
                     </div>
 
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="password">Mot de passe *</label>
                         <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
-                        <small>8 caractères minimum.</small>
+                        <small class="s-hint">8 caractères minimum.</small>
                     </div>
 
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="password_confirm">Confirmer le mot de passe *</label>
                         <input type="password" id="password_confirm" name="password_confirm" required minlength="8" autocomplete="new-password">
                     </div>
 
-                    <div class="form-group-checkbox">
+                    <div class="s-check">
                         <input type="checkbox" id="notify_new_events" name="notify_new_events" value="1" <?= !empty($_POST['notify_new_events']) ? 'checked' : '' ?>>
                         <label for="notify_new_events">Me prévenir par email quand une nouvelle partie est ouverte aux inscriptions (désactivable à tout moment).</label>
                     </div>
 
-                    <div class="form-group-checkbox">
+                    <div class="s-check">
                         <input type="checkbox" id="accept_rules" name="accept_rules" value="1" required <?= !empty($_POST['accept_rules']) ? 'checked' : '' ?>>
                         <label for="accept_rules">J'accepte les <a href="cgv.php" target="_blank">conditions générales</a> et la
                             <a href="confidentialite.php" target="_blank">politique de confidentialité</a>, et je m'engage à respecter
                             les règles de sécurité (protection oculaire obligatoire) et le fair-play. *</label>
                     </div>
 
-                    <button type="submit" class="btn btn-primary">Créer mon compte</button>
+                    <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block">Créer mon compte</button>
                 </form>
 
-                <p class="auth-link">Déjà un compte ?
+                <p class="s-auth-link">Déjà un compte ?
                     <a href="login.php<?= $return ? '?return=' . urlencode($return) : '' ?>">Se connecter</a></p>
             <?php endif; ?>
-        </div>
+        </div></div>
     </main>
 
     <?php include 'includes/footer.php'; ?>

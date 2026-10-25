@@ -1,65 +1,57 @@
 <?php
-// Déterminer le chemin de base selon le dossier actuel
-$base_path = '';
-if (strpos($_SERVER['PHP_SELF'], '/admin/') !== false) {
-    $base_path = '../';
-} elseif (strpos($_SERVER['PHP_SELF'], '/player/') !== false) {
-    $base_path = '../';
-} elseif (strpos($_SERVER['PHP_SELF'], '/qr-code/') !== false) {
-    $base_path = '../';
-}
+/** Pied de page commun à tout le site. */
+$base_path = base_path();
+[$footer_phone, $footer_phone_href] = asso_phone();
+$footer_email = defined('ASSO_EMAIL') && ASSO_EMAIL !== '' ? ASSO_EMAIL : 'contact@mafia-airsoft.com';
 ?>
-<footer class="site-footer">
-    <div class="container">
-        <div class="footer-content">
-            <div class="footer-section">
-                <h3>💀 MAFIA AIRSOFT TEAM</h3>
-                <p>Association d'airsoft passionnée par le jeu tactique et le fair-play.</p>
-                <p class="motto">Memento Mori</p>
-            </div>
-            
-            <div class="footer-section">
-                <h4>Navigation</h4>
-                <ul>
-                    <li><a href="<?= $base_path ?>index.php">Accueil</a></li>
-                    <li><a href="<?= $base_path ?>events.php">Parties</a></li>
-                    <li><a href="<?= $base_path ?>blog.php">Blog</a></li>
-                    <?php if (isLoggedIn()): ?>
-                        <li><a href="<?= $base_path ?>player/dashboard.php">Mon espace</a></li>
-                    <?php endif; ?>
-                </ul>
-            </div>
-            
-            <div class="footer-section">
-                <h4>Contact</h4>
-                <ul>
-                    <li>📧 contact@mafia-airsoft.com</li>
-                    <li>📱 +33 06 80 85 08 46</li>
-                    <li>📍 Puy-de-Dôme</li>
-                </ul>
-            </div>
-            
-            <div class="footer-section">
-                <h4>Sécurité</h4>
-                <p>Toutes nos parties respectent les règles de sécurité en vigueur. Protection obligatoire.</p>
-            </div>
+<footer class="s-footer">
+    <div class="s-wrap s-footer-grid">
+        <div class="s-footer-brand">
+            <a class="s-brand" href="<?= e($base_path) ?>index.php">
+                <img src="<?= e($base_path) ?>images/logo.png" alt="" width="42" height="42" loading="lazy">
+                <span class="s-brand-text">
+                    <span class="s-brand-name">Mafia Airsoft Team</span>
+                    <span class="s-brand-tag">Association d'airsoft</span>
+                </span>
+            </a>
+            <p>Association d'airsoft passionnée par le jeu tactique et le fair-play.</p>
+            <p class="s-footer-motto">Memento Mori</p>
+            <p class="s-footer-note"><?= ui_icon('shield', 18) ?><span>Toutes nos parties respectent les règles de sécurité en vigueur. Protection oculaire obligatoire.</span></p>
         </div>
-        
-        <div class="footer-bottom">
-            <p>&copy; <?= date('Y') ?> Mafia Airsoft Team. Tous droits réservés.</p>
-            <p class="footer-legal">
-                <a href="<?= $base_path ?>cgv.php">Conditions générales</a> ·
-                <a href="<?= $base_path ?>confidentialite.php">Confidentialité</a> ·
-                <a href="<?= $base_path ?>mentions-legales.php">Mentions légales</a>
-            </p>
-            <p class="footer-credits">
-                <img src="<?= $base_path ?>images/icons/france.png" alt="France" class="flag-fr"> Conçu et développé en France
-            </p>
+
+        <div>
+            <h2>Navigation</h2>
+            <ul>
+                <li><a href="<?= e($base_path) ?>index.php">Accueil</a></li>
+                <li><a href="<?= e($base_path) ?>events.php">Parties</a></li>
+                <li><a href="<?= e($base_path) ?>blog.php">Blog</a></li>
+                <?php if (isLoggedIn()): ?>
+                    <li><a href="<?= e($base_path) ?>player/dashboard.php">Mon espace</a></li>
+                <?php else: ?>
+                    <li><a href="<?= e($base_path) ?>register.php">Créer un compte</a></li>
+                <?php endif; ?>
+            </ul>
         </div>
+
+        <div>
+            <h2>Contact</h2>
+            <ul>
+                <li><?= ui_icon('mail', 17) ?><a href="mailto:<?= e($footer_email) ?>"><?= e($footer_email) ?></a></li>
+                <li><?= ui_icon('phone', 17) ?><a href="tel:<?= e($footer_phone_href) ?>"><?= e($footer_phone) ?></a></li>
+                <li><?= ui_icon('pin', 17) ?><span>Puy-de-Dôme (63)</span></li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="s-wrap s-footer-bottom">
+        <span>&copy; <?= date('Y') ?> Mafia Airsoft Team. Tous droits réservés.</span>
+        <nav class="s-footer-legal" aria-label="Informations légales">
+            <a href="<?= e($base_path) ?>cgv.php">Conditions générales</a>
+            <a href="<?= e($base_path) ?>confidentialite.php">Confidentialité</a>
+            <a href="<?= e($base_path) ?>mentions-legales.php">Mentions légales</a>
+        </nav>
+        <span class="s-footer-credit"><img src="<?= e($base_path) ?>images/icons/france.png" alt="" width="18" height="12" loading="lazy">Conçu et développé en France</span>
     </div>
 </footer>
 
-<script src="<?= $base_path ?>js/main.js"></script>
-<?php if (basename($_SERVER['PHP_SELF']) === 'event.php'): ?>
-<script src="<?= $base_path ?>js/event.js"></script>
-<?php endif; ?>
+<script src="<?= e(asset_url('js/main.js', $base_path)) ?>"></script>

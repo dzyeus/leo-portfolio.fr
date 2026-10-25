@@ -23,39 +23,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sent = true;
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Renvoyer la confirmation - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<?php site_head('Renvoyer la confirmation', ['noindex' => true]); include 'includes/header.php'; ?>
 
-    <main class="auth-container">
-        <div class="auth-box">
-            <h1>Confirmer mon email</h1>
+    <main class="s-wrap">
+        <div class="s-auth"><div class="a-card">
+            <div class="s-auth-head"><img src="images/logo.png" alt="" width="64" height="64"><h1>Confirmer mon email</h1></div>
 
             <?php if ($sent): ?>
-                <div class="alert alert-success">
+                <div class="alert alert-success" data-keep>
                     Si un compte non confirmé existe avec cette adresse, un nouveau lien vient d'être envoyé.
                     Pense à regarder dans les spams.
                 </div>
-                <p class="auth-link"><a href="login.php">Aller à la connexion</a></p>
+                <p class="s-auth-link"><a href="login.php">Aller à la connexion</a></p>
             <?php else: ?>
-                <form method="POST" action="resend_verification.php" class="auth-form">
+                <form method="POST" action="resend_verification.php" class="s-form">
                     <?= csrf_field() ?>
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="email">Email du compte</label>
                         <input type="email" id="email" name="email" required value="<?= e($email) ?>">
                     </div>
-                    <button type="submit" class="btn btn-primary">Renvoyer le lien</button>
+                    <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block">Renvoyer le lien</button>
                 </form>
             <?php endif; ?>
-        </div>
+        </div></div>
     </main>
 
     <?php include 'includes/footer.php'; ?>

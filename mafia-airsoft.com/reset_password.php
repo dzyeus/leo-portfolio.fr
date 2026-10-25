@@ -28,45 +28,35 @@ if ($userId && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nouveau mot de passe - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<?php site_head('Nouveau mot de passe', ['noindex' => true]); include 'includes/header.php'; ?>
 
-    <main class="auth-container">
-        <div class="auth-box">
-            <h1>Nouveau mot de passe</h1>
+    <main class="s-wrap">
+        <div class="s-auth"><div class="a-card">
+            <div class="s-auth-head"><img src="images/logo.png" alt="" width="64" height="64"><h1>Nouveau mot de passe</h1></div>
 
             <?php if (!$userId): ?>
                 <div class="alert alert-error">Ce lien est invalide ou expiré (il est valable 1 heure).</div>
-                <p class="auth-link"><a href="forgot_password.php">Recevoir un nouveau lien</a></p>
+                <p class="s-auth-link"><a href="forgot_password.php">Recevoir un nouveau lien</a></p>
             <?php else: ?>
                 <?php if ($error): ?>
                     <div class="alert alert-error"><?= e($error) ?></div>
                 <?php endif; ?>
-                <form method="POST" action="reset_password.php" class="auth-form">
+                <form method="POST" action="reset_password.php" class="s-form">
                     <?= csrf_field() ?>
                     <input type="hidden" name="token" value="<?= e($token) ?>">
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="password">Nouveau mot de passe</label>
                         <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
-                        <small>8 caractères minimum.</small>
+                        <small class="s-hint">8 caractères minimum.</small>
                     </div>
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="password_confirm">Confirmer</label>
                         <input type="password" id="password_confirm" name="password_confirm" required minlength="8" autocomplete="new-password">
                     </div>
-                    <button type="submit" class="btn btn-primary">Enregistrer</button>
+                    <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block">Enregistrer</button>
                 </form>
             <?php endif; ?>
-        </div>
+        </div></div>
     </main>
 
     <?php include 'includes/footer.php'; ?>

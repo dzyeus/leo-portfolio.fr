@@ -27,14 +27,17 @@ if (!headers_sent()) {
     header('X-Frame-Options: SAMEORIGIN');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()');
+    header('Cross-Origin-Opener-Policy: same-origin');
+    header('X-Permitted-Cross-Domain-Policies: none');
     header("Content-Security-Policy: default-src 'self'; "
-        . "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+        . "script-src 'self' 'unsafe-inline'; "
         . "style-src 'self' 'unsafe-inline'; "
         . "font-src 'self' data:; "
         . "img-src 'self' data: blob: https:; "
         . "connect-src 'self'; media-src 'self' data: blob:; "
         . "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; "
-        . "form-action 'self' https://checkout.stripe.com");
+        . "form-action 'self' https://checkout.stripe.com"
+        . ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? '; upgrade-insecure-requests' : ''));
     if ($isHttps ?? ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'))) {
         header('Strict-Transport-Security: max-age=31536000');
     }
@@ -71,10 +74,15 @@ ob_start(function (string $buffer) use ($csrfTokenForForms): string {
 // ---------------------------------------------------------------------
 if (isset($_SESSION['user_id'], $pdo) && $pdo instanceof PDO) {
     try {
-        $stmt = $pdo->prepare("SELECT pseudo, is_admin FROM users WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT pseudo, is_admin, password_hash FROM users WHERE id = ?");
         $stmt->execute([$_SESSION['user_id']]);
         $sessionUser = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$sessionUser) {
+        $fingerprint = $sessionUser ? session_password_fingerprint((string)$sessionUser['password_hash']) : '';
+        if ($sessionUser && empty($_SESSION['pwd_fp'])) {
+            $_SESSION['pwd_fp'] = $fingerprint; // sessions ouvertes avant cette mise à jour
+        }
+        if (!$sessionUser || !hash_equals((string)$_SESSION['pwd_fp'], $fingerprint)) {
+            // Compte supprimé, ou mot de passe changé ailleurs : cette session n'est plus valable
             $_SESSION = [];
             session_regenerate_id(true);
         } else {
@@ -82,10 +90,26 @@ if (isset($_SESSION['user_id'], $pdo) && $pdo instanceof PDO) {
             $_SESSION['is_admin'] = (int)$sessionUser['is_admin'];
             $_SESSION['role'] = ((int)$sessionUser['is_admin'] === 1) ? 'admin' : 'player';
         }
-        unset($stmt, $sessionUser);
+        unset($stmt, $sessionUser, $fingerprint);
     } catch (Throwable $e) {
         // Base pas encore migrée : on ne bloque pas le site
     }
+}
+
+// Session inactive depuis plus de 12 heures : on la ferme (ordinateur partagé, téléphone perdu…)
+if (isset($_SESSION['user_id'])) {
+    if (!empty($_SESSION['last_seen']) && time() - (int)$_SESSION['last_seen'] > 12 * 3600) {
+        $_SESSION = [];
+        session_regenerate_id(true);
+    } else {
+        $_SESSION['last_seen'] = time();
+    }
+}
+
+// Pages vues une fois connecté : jamais gardées en cache (le bouton « retour » après
+// une déconnexion ne réaffiche pas les informations du compte)
+if (isset($_SESSION['user_id']) && !headers_sent()) {
+    header('Cache-Control: private, no-store, max-age=0');
 }
 
 // Fonction pour vérifier si l'utilisateur est connecté
@@ -132,6 +156,12 @@ function requireAdmin() {
     }
 }
 
+/** Lien de déconnexion protégé (un site tiers ne peut pas déconnecter un joueur à son insu). */
+function logout_url(string $basePath = ''): string
+{
+    return $basePath . 'logout.php?t=' . urlencode(csrf_token());
+}
+
 // Fonction pour se déconnecter
 function logout() {
     $_SESSION = [];
@@ -151,6 +181,7 @@ function logout() {
     exit;
 }
 
-// Inclure les fonctions d'icônes
+// Inclure les fonctions d'icônes (anciennes icônes PNG + icônes SVG et éléments d'interface)
 require_once __DIR__ . '/../includes/icons.php';
+require_once __DIR__ . '/../includes/ui.php';
 ?>

@@ -162,19 +162,10 @@ $stmt->execute($params);
 $players = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $flashes = flash_get();
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Joueurs - Administration</title>
-    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head('Joueurs', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
+    <main class="s-wrap">
         <div class="a-page-head">
             <div>
                 <h1>Joueurs</h1>
@@ -195,28 +186,28 @@ $flashes = flash_get();
             <div class="a-collapse-body">
                 <?php if ($addError): ?><div class="alert alert-error"><?= e($addError) ?></div><?php endif; ?>
                 <p class="a-small a-muted" style="margin-bottom:0.75rem;">Les joueurs peuvent aussi créer leur compte eux-mêmes sur le site. Un compte ajouté ici est confirmé d'office.</p>
-                <form method="POST" enctype="multipart/form-data" class="admin-form">
+                <form method="POST" enctype="multipart/form-data" class="s-form">
                     <input type="hidden" name="action" value="add_player">
-                    <div class="form-row">
-                        <div class="form-group"><label for="pseudo">Pseudo *</label>
+                    <div class="s-form-row">
+                        <div class="s-field"><label for="pseudo">Pseudo *</label>
                             <input type="text" id="pseudo" name="pseudo" required maxlength="30" value="<?= e($addForm['pseudo'] ?? '') ?>"></div>
-                        <div class="form-group"><label for="email">Email *</label>
+                        <div class="s-field"><label for="email">Email *</label>
                             <input type="email" id="email" name="email" required value="<?= e($addForm['email'] ?? '') ?>"></div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group"><label for="first_name">Prénom *</label>
+                    <div class="s-form-row">
+                        <div class="s-field"><label for="first_name">Prénom *</label>
                             <input type="text" id="first_name" name="first_name" required maxlength="100" value="<?= e($addForm['first_name'] ?? '') ?>"></div>
-                        <div class="form-group"><label for="last_name">Nom *</label>
+                        <div class="s-field"><label for="last_name">Nom *</label>
                             <input type="text" id="last_name" name="last_name" required maxlength="100" value="<?= e($addForm['last_name'] ?? '') ?>"></div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group"><label for="password">Mot de passe *</label>
+                    <div class="s-form-row">
+                        <div class="s-field"><label for="password">Mot de passe *</label>
                             <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password">
-                            <small>8 caractères minimum (le joueur pourra le changer, ou utiliser « mot de passe oublié »)</small></div>
-                        <div class="form-group"><label for="phone">Téléphone</label>
+                            <span class="s-hint">8 caractères minimum (le joueur pourra le changer, ou utiliser « mot de passe oublié »)</span></div>
+                        <div class="s-field"><label for="phone">Téléphone</label>
                             <input type="tel" id="phone" name="phone" value="<?= e($addForm['phone'] ?? '') ?>"></div>
                     </div>
-                    <div class="form-group"><label for="profile_picture">Photo (facultatif)</label>
+                    <div class="s-field"><label for="profile_picture">Photo (facultatif)</label>
                         <input type="file" id="profile_picture" name="profile_picture" accept="image/*"></div>
                     <button type="submit" class="a-btn a-btn-primary"><?= admin_svg('plus', 18) ?> Ajouter le joueur</button>
                 </form>
@@ -284,7 +275,7 @@ $flashes = flash_get();
                                         <?php if ((int)$p['is_admin'] === 1): ?><span class="a-badge st-danger">Admin</span><?php endif; ?>
                                         <?php if (empty($p['email_verified_at'])): ?><span class="a-badge st-warn">Email à confirmer</span>
                                         <?php else: ?><span class="a-badge st-ok">Confirmé</span><?php endif; ?>
-                                        <?php if (!empty($p['notify_new_events'])): ?><span class="a-badge st-info" title="Abonné aux alertes">🔔</span><?php endif; ?>
+                                        <?php if (!empty($p['notify_new_events'])): ?><span class="a-badge st-info" title="Abonné aux alertes"><?= ui_icon('bell', 13) ?> Alertes</span><?php endif; ?>
                                     </span>
                                 </td>
                                 <td class="t-actions-cell">

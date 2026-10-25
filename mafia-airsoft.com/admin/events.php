@@ -38,19 +38,10 @@ $events = admin_events_with_stats($pdo, $where, $params, $tab === 'past' ? 'e.ev
 $tabLabels = ['upcoming' => 'À venir', 'past' => 'Passées', 'hidden' => 'Masquées'];
 $flashes = flash_get();
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parties - Administration</title>
-    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head('Parties', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
+    <main class="s-wrap">
         <div class="a-page-head">
             <div>
                 <h1>Parties</h1>

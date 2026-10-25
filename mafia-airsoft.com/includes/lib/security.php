@@ -172,9 +172,21 @@ function current_user(PDO $pdo): ?array
 }
 
 /** Ouvre la session d'un compte (après vérification du mot de passe). */
+/** Empreinte du mot de passe gardée en session : si le mot de passe change, les autres sessions sont fermées. */
+function session_password_fingerprint(string $passwordHash): string
+{
+    return hash_hmac('sha256', $passwordHash, app_secret());
+}
+
 function login_user(PDO $pdo, array $user): void
 {
     session_regenerate_id(true);
+    if (!isset($user['password_hash'])) {
+        $stmt = $pdo->prepare("SELECT password_hash FROM users WHERE id = ?");
+        $stmt->execute([$user['id']]);
+        $user['password_hash'] = (string)$stmt->fetchColumn();
+    }
+    $_SESSION['pwd_fp'] = session_password_fingerprint((string)$user['password_hash']);
     $_SESSION['user_id']  = (int)$user['id'];
     $_SESSION['pseudo']   = $user['pseudo'];
     $_SESSION['is_admin'] = (int)$user['is_admin'];

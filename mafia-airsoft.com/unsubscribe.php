@@ -23,35 +23,25 @@ if ($valid && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alertes email - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<?php site_head('Alertes email', ['noindex' => true]); include 'includes/header.php'; ?>
 
-    <main class="auth-container">
-        <div class="auth-box">
-            <h1>Alertes email</h1>
+    <main class="s-wrap">
+        <div class="s-auth"><div class="a-card">
+            <div class="s-auth-head"><img src="images/logo.png" alt="" width="64" height="64"><h1>Alertes email</h1></div>
 
             <?php if (!$valid): ?>
                 <div class="alert alert-error">Ce lien de désabonnement est invalide.</div>
-                <p class="auth-link">Tu peux gérer tes alertes depuis <a href="player/profile.php">ton profil</a>.</p>
+                <p class="s-auth-link">Tu peux gérer tes alertes depuis <a href="player/profile.php">ton profil</a>.</p>
             <?php elseif ($done): ?>
-                <div class="alert alert-success">C'est fait : tu ne recevras plus d'email pour les nouvelles parties.</div>
-                <p class="auth-link">Tu peux te réabonner à tout moment depuis <a href="player/profile.php">ton profil</a>.</p>
+                <div class="alert alert-success" data-keep>C'est fait : tu ne recevras plus d'email pour les nouvelles parties.</div>
+                <p class="s-auth-link">Tu peux te réabonner à tout moment depuis <a href="player/profile.php">ton profil</a>.</p>
             <?php else: ?>
                 <p style="margin-bottom: var(--spacing-md);">Ne plus recevoir d'email quand une nouvelle partie est ouverte aux inscriptions ?</p>
-                <form method="POST" action="unsubscribe.php?u=<?= $userId ?>&amp;t=<?= e($token) ?>" class="auth-form">
-                    <button type="submit" class="btn btn-primary">Me désabonner</button>
+                <form method="POST" action="unsubscribe.php?u=<?= $userId ?>&amp;t=<?= e($token) ?>" class="s-form">
+                    <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block">Me désabonner</button>
                 </form>
             <?php endif; ?>
-        </div>
+        </div></div>
     </main>
 
     <?php include 'includes/footer.php'; ?>

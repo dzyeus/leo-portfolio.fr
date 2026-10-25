@@ -31,141 +31,65 @@ $gallery_images = $stmt_gallery->fetchAll();
 // Incrémenter le compteur de vues
 $stmt = $pdo->prepare("UPDATE blog_posts SET views = views + 1 WHERE id = ?");
 $stmt->execute([$post['id']]);
-?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($post['title']) ?> - Blog Mafia Airsoft Team</title>
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
 
-    <main class="container page-content">
-        <div class="blog-post-header">
-            <a href="blog.php" class="btn btn-outline">← Retour au blog</a>
+$published = (string)($post['published_at'] ?: $post['created_at'] ?? 'now');
+$excerpt = trim((string)($post['excerpt'] ?? '')) ?: mb_strimwidth(trim(preg_replace('/\s+/', ' ', (string)$post['content'])), 0, 180, '…');
+$cover = (string)($post['featured_image'] ?? '');
+
+site_head($post['title'], [
+    'description' => $excerpt,
+    'image' => ($cover !== '' && !preg_match('#^https?://#', $cover)) ? $cover : 'images/logo.png',
+]);
+include 'includes/header.php';
+?>
+<main class="s-wrap">
+    <article class="s-article">
+        <a class="s-back" href="blog.php"><?= ui_icon('chevronleft', 18) ?> Tous les articles</a>
+        <header class="s-article-head">
+            <h1><?= e($post['title']) ?></h1>
+            <div class="s-post-meta">
+                <span><?= ui_icon('calendar', 15) ?> <?= e((int)date('j', strtotime($published)) . ' ' . fr_month($published) . ' ' . date('Y', strtotime($published))) ?></span>
+                <span><?= ui_icon('user', 15) ?> <?= e($post['author_name']) ?></span>
+                <span><?= ui_icon('eye', 15) ?> <?= (int)$post['views'] + 1 ?> lecture<?= (int)$post['views'] + 1 > 1 ? 's' : '' ?></span>
+            </div>
+        </header>
+
+        <?php if ($cover !== ''): ?>
+            <figure class="s-article-cover"><img src="<?= e($cover) ?>" alt=""></figure>
+        <?php endif; ?>
+
+        <div class="a-card" style="margin-top:1.25rem;">
+            <div class="s-prose"><?= nl2br(e($post['content'])) ?></div>
         </div>
 
-        <article class="blog-post">
-            <?php if ($post['featured_image']): ?>
-                <div class="blog-post-image">
-                    <img src="<?= htmlspecialchars($post['featured_image']) ?>" alt="<?= htmlspecialchars($post['title']) ?>">
+        <?php if ($gallery_images): ?>
+            <section class="a-card" style="margin-top:1.25rem;">
+                <div class="a-card-head"><h2><?= ui_icon('camera', 18) ?> Photos</h2><span class="s-muted s-small"><?= count($gallery_images) ?> photo<?= count($gallery_images) > 1 ? 's' : '' ?></span></div>
+                <div class="s-gallery">
+                    <?php foreach ($gallery_images as $image): ?>
+                        <button type="button" data-lightbox="<?= e($image['image_path']) ?>" data-caption="<?= e($image['caption'] ?? '') ?>" aria-label="Agrandir la photo">
+                            <img src="<?= e($image['image_path']) ?>" alt="<?= e($image['caption'] ?: 'Photo de l\'article') ?>" loading="lazy">
+                        </button>
+                    <?php endforeach; ?>
                 </div>
-            <?php endif; ?>
-            
-            <div class="blog-post-meta">
-                <div class="author-info">
-                    <?php if ($post['author_picture']): ?>
-                        <img src="<?= htmlspecialchars($post['author_picture']) ?>" alt="<?= htmlspecialchars($post['author_name']) ?>" class="author-avatar">
-                    <?php else: ?>
-                        <div class="author-avatar"><?= icon('user') ?></div>
-                    <?php endif; ?>
-                    <div>
-                        <strong><?= htmlspecialchars($post['author_name']) ?></strong>
-                        <span class="blog-date">
-                            Publié le <?= date('d/m/Y à H:i', strtotime($post['published_at'])) ?>
-                        </span>
-                    </div>
+            </section>
+            <dialog class="s-lightbox" id="lightbox" aria-label="Photo agrandie">
+                <img src="" alt="">
+                <p></p>
+                <div class="s-lightbox-bar">
+                    <?php if (count($gallery_images) > 1): ?><button type="button" class="a-btn" data-lb="-1" aria-label="Photo précédente"><?= ui_icon('chevronleft', 18) ?></button><?php endif; ?>
+                    <button type="button" class="a-btn" data-lb="close"><?= ui_icon('x', 18) ?> Fermer</button>
+                    <?php if (count($gallery_images) > 1): ?><button type="button" class="a-btn" data-lb="1" aria-label="Photo suivante"><?= ui_icon('chevron', 18) ?></button><?php endif; ?>
                 </div>
-                <span class="blog-views"><?= icon('eye') ?> <?= $post['views'] + 1 ?> vues</span>
-            </div>
+            </dialog>
+        <?php endif; ?>
 
-            <h1 class="blog-post-title"><?= htmlspecialchars($post['title']) ?></h1>
-
-            <div class="blog-post-content">
-                <?= nl2br(htmlspecialchars($post['content'])) ?>
-            </div>
-
-            <?php if (!empty($gallery_images)): ?>
-                <div class="blog-gallery">
-                    <h3>📷 Galerie de photos</h3>
-                    <div class="blog-gallery-grid">
-                        <?php foreach ($gallery_images as $index => $image): ?>
-                            <div class="blog-gallery-item" onclick="openGalleryModal(<?= $index ?>)">
-                                <img src="<?= htmlspecialchars($image['image_path']) ?>" 
-                                     alt="<?= htmlspecialchars($image['caption'] ?: 'Image de la galerie') ?>">
-                                <?php if ($image['caption']): ?>
-                                    <div class="blog-gallery-caption">
-                                        <?= htmlspecialchars($image['caption']) ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-
-                <!-- Modal pour afficher les images en grand -->
-                <div id="galleryModal" class="gallery-modal" onclick="closeGalleryModal()">
-                    <span class="gallery-modal-close">&times;</span>
-                    <div class="gallery-modal-content" onclick="event.stopPropagation()">
-                        <button class="gallery-modal-prev" onclick="changeGalleryImage(-1)">&#10094;</button>
-                        <img id="galleryModalImg" src="" alt="Image en grand">
-                        <div id="galleryModalCaption"></div>
-                        <button class="gallery-modal-next" onclick="changeGalleryImage(1)">&#10095;</button>
-                    </div>
-                </div>
-
-                <script>
-                    const galleryImages = <?= json_encode(array_map(function($img) {
-                        return [
-                            'path' => $img['image_path'],
-                            'caption' => $img['caption']
-                        ];
-                    }, $gallery_images)) ?>;
-                    let currentGalleryIndex = 0;
-
-                    function openGalleryModal(index) {
-                        currentGalleryIndex = index;
-                        const modal = document.getElementById('galleryModal');
-                        const img = document.getElementById('galleryModalImg');
-                        const caption = document.getElementById('galleryModalCaption');
-                        
-                        modal.style.display = 'flex';
-                        img.src = galleryImages[index].path;
-                        caption.textContent = galleryImages[index].caption || '';
-                        document.body.style.overflow = 'hidden';
-                    }
-
-                    function closeGalleryModal() {
-                        document.getElementById('galleryModal').style.display = 'none';
-                        document.body.style.overflow = 'auto';
-                    }
-
-                    function changeGalleryImage(direction) {
-                        currentGalleryIndex += direction;
-                        if (currentGalleryIndex < 0) {
-                            currentGalleryIndex = galleryImages.length - 1;
-                        } else if (currentGalleryIndex >= galleryImages.length) {
-                            currentGalleryIndex = 0;
-                        }
-                        
-                        const img = document.getElementById('galleryModalImg');
-                        const caption = document.getElementById('galleryModalCaption');
-                        img.src = galleryImages[currentGalleryIndex].path;
-                        caption.textContent = galleryImages[currentGalleryIndex].caption || '';
-                    }
-
-                    // Fermer avec la touche Escape
-                    document.addEventListener('keydown', function(event) {
-                        if (event.key === 'Escape') {
-                            closeGalleryModal();
-                        } else if (event.key === 'ArrowLeft') {
-                            changeGalleryImage(-1);
-                        } else if (event.key === 'ArrowRight') {
-                            changeGalleryImage(1);
-                        }
-                    });
-                </script>
-            <?php endif; ?>
-
-            <div class="blog-post-footer">
-                <a href="blog.php" class="btn btn-primary">← Retour au blog</a>
-            </div>
-        </article>
-    </main>
-
-    <?php include 'includes/footer.php'; ?>
+        <div class="s-form-actions" style="margin-top:1.5rem;">
+            <a href="blog.php" class="a-btn"><?= ui_icon('chevronleft', 18) ?> Retour au blog</a>
+            <a href="events.php" class="a-btn a-btn-primary"><?= ui_icon('calendar', 18) ?> Voir les prochaines parties</a>
+        </div>
+    </article>
+</main>
+<?php include 'includes/footer.php'; ?>
 </body>
 </html>

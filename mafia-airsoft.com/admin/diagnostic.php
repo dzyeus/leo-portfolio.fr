@@ -72,129 +72,112 @@ $pending = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE email_verified_at 
 
 function check_line(bool $ok, string $label, string $detail = ''): void
 {
-    echo '<li>' . ($ok ? '✅' : '❌') . ' ' . e($label) . ($detail !== '' ? ' <small>(' . e($detail) . ')</small>' : '') . '</li>';
+    echo '<li class="a-check ' . ($ok ? 'is-ok' : 'is-ko') . '">' . ui_icon($ok ? 'check' : 'x', 17)
+        . '<span><strong>' . e($label) . '</strong>' . ($detail !== '' ? '<span class="a-check-detail">' . e($detail) . '</span>' : '') . '</span></li>';
+}
+
+function info_line(string $label, string $detailHtml): void
+{
+    echo '<li class="a-check is-info">' . ui_icon('info', 17) . '<span><strong>' . e($label) . '</strong>'
+        . '<span class="a-check-detail">' . $detailHtml . '</span></span></li>';
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Diagnostic - Administration</title>
-    <link rel="stylesheet" href="../css/style.css">
-    <style>
-        .smtp-log { background:#0a0a0a; border:1px solid var(--tactical-border); border-radius:var(--radius-sm);
-                    padding:var(--spacing-md); max-height:420px; overflow:auto; font-family:monospace; font-size:0.8rem;
-                    color:#d4d4d4; white-space:pre-wrap; word-break:break-all; }
-        .check-list { list-style:none; padding:0; line-height:2; }
-    </style>
-</head>
-<body>
+<?php site_head('Diagnostic', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
-        <div class="admin-panel">
-            <div class="page-header">
-                <h1>🩺 Diagnostic paiement et emails</h1>
-                <a href="index.php" class="btn btn-secondary">← Retour au dashboard</a>
+    <main class="s-wrap">
+        <div class="a-page-head">
+            <div>
+                <h1>Diagnostic</h1>
+                <div class="a-sub">Vérifie le paiement en ligne (Stripe) et l'envoi des emails.</div>
             </div>
+        </div>
 
-            <?php if (preg_match('/^(sk|rk)_live_/', $key)): ?>
-                <div class="alert alert-warning">⚠️ Le site est configuré avec une clé Stripe LIVE : les réservations débitent de vraies cartes.</div>
-            <?php endif; ?>
+        <?php if (preg_match('/^(sk|rk)_live_/', $key)): ?>
+            <div class="alert alert-warning a-flash">Le site utilise une clé Stripe LIVE : les réservations débitent de vraies cartes.</div>
+        <?php endif; ?>
 
-            <section class="dashboard-section">
-                <h2>💳 Paiement Stripe</h2>
-                <ul class="check-list">
-                    <?php check_line($keyOk, 'Clé Stripe', $keyType . ($keyOk ? ' – se termine par …' . substr($key, -4) : '')); ?>
-                    <?php check_line($keyClean, 'Pas d\'espace avant/après la clé'); ?>
-                    <?php check_line($whsecOk, 'Clé du webhook (whsec_…)', $whsecOk ? 'renseignée' : 'à renseigner après avoir créé le webhook – sans elle, les paiements ne sont pas confirmés automatiquement'); ?>
+        <div class="a-grid a-grid-2">
+            <section class="a-card">
+                <div class="a-card-head"><h2><?= ui_icon('card', 18) ?> Paiement Stripe</h2></div>
+                <ul class="a-checks">
+                    <?php check_line($keyOk, 'Clé Stripe', $keyType . ($keyOk ? ' · se termine par …' . substr($key, -4) : '')); ?>
+                    <?php check_line($keyClean, 'Pas d\'espace avant ou après la clé'); ?>
+                    <?php check_line($whsecOk, 'Clé du webhook (whsec_…)', $whsecOk ? 'renseignée' : 'à renseigner après avoir créé le webhook : sans elle, les paiements ne sont pas confirmés automatiquement'); ?>
                     <?php check_line(str_starts_with(SITE_URL, 'https://'), 'Adresse du site', SITE_URL); ?>
-                    <li>ℹ️ Produit : <?= STRIPE_PRODUCT_ID !== '' ? e(STRIPE_PRODUCT_ID) . ' <small>(s\'il n\'existe pas avec cette clé, le site s\'en passe automatiquement)</small>' : 'aucun (nom envoyé directement)' ?></li>
+                    <?php info_line('Produit Stripe', STRIPE_PRODUCT_ID !== '' ? e(STRIPE_PRODUCT_ID) . ' (s\'il n\'existe pas avec cette clé, le site s\'en passe automatiquement)' : 'aucun (le nom de la partie est envoyé directement)'); ?>
                 </ul>
-                <form method="POST" style="margin-top: var(--spacing-md);">
+                <form method="POST" class="a-diag-test">
                     <input type="hidden" name="action" value="stripe">
-                    <button type="submit" class="btn btn-primary">Tester la création d'un paiement</button>
-                    <small style="color:#a3a3a3;">Crée une page de paiement de 10 € puis l'annule aussitôt (rien n'est débité).</small>
+                    <button type="submit" class="a-btn a-btn-primary"><?= ui_icon('activity', 18) ?> Tester la création d'un paiement</button>
+                    <span class="s-hint">Crée une page de paiement de 10 € puis l'annule aussitôt : rien n'est débité.</span>
                 </form>
                 <?php if ($stripeResult): ?>
                     <?php if ($stripeResult['ok']): ?>
-                        <div class="alert alert-success" style="margin-top: var(--spacing-md);">
-                            ✅ Stripe fonctionne (mode <?= e($stripeResult['mode']) ?>). Les réservations payantes peuvent démarrer.
-                        </div>
+                        <div class="alert alert-success" style="margin-top:1rem;">Stripe fonctionne (mode <?= e($stripeResult['mode']) ?>). Les réservations payantes peuvent démarrer.</div>
                         <?php if ($stripeResult['mode'] === 'LIVE'): ?>
-                            <div class="alert alert-warning">
-                                ⚠️ Clé <strong>LIVE</strong> : les paiements sont <strong>réels</strong> (vraies cartes débitées).
-                                Pour tester, utilise une clé <code>rk_test_…</code> ou <code>sk_test_…</code> créée dans
-                                l'environnement de test « Mafia Airsoft Team », avec le webhook de ce même environnement.
-                            </div>
+                            <div class="alert alert-warning">Clé <strong>LIVE</strong> : les paiements sont réels. Pour tester, utilise une clé
+                                <code>rk_test_…</code> ou <code>sk_test_…</code> de l'environnement de test, avec le webhook de ce même environnement.</div>
                         <?php endif; ?>
                     <?php else: ?>
-                        <div class="alert alert-error" style="margin-top: var(--spacing-md);">❌ Stripe : <?= e($stripeResult['error']) ?></div>
+                        <div class="alert alert-error" style="margin-top:1rem;">Stripe : <?= e($stripeResult['error']) ?></div>
                         <?php if ($stripeResult['hint']): ?>
-                            <div class="alert alert-warning">💡 <?= e($stripeResult['hint']) ?></div>
+                            <div class="alert alert-warning"><?= e($stripeResult['hint']) ?></div>
                         <?php endif; ?>
                     <?php endif; ?>
                 <?php endif; ?>
             </section>
 
-            <section class="dashboard-section">
-                <h2>✉️ Emails : configuration</h2>
-                <ul class="check-list">
+            <section class="a-card">
+                <div class="a-card-head"><h2><?= ui_icon('mail', 18) ?> Emails</h2></div>
+                <ul class="a-checks">
                     <?php check_line($configOk, 'Fichier config/app.php présent'); ?>
                     <?php check_line($vendorOk, 'PHPMailer installé (dossier vendor/)'); ?>
-                    <li>ℹ️ Mode d'envoi : <strong><?= mail_uses_php_mail() ? 'fonction mail() du serveur' : 'SMTP' ?></strong>
-                        <small>(MAIL_TRANSPORT = '<?= e(MAIL_TRANSPORT) ?>')</small></li>
+                    <?php info_line('Mode d\'envoi', (mail_uses_php_mail() ? 'fonction mail() du serveur' : 'SMTP') . ' (MAIL_TRANSPORT = \'' . e(MAIL_TRANSPORT) . '\')'); ?>
                     <?php if (mail_uses_php_mail()): ?>
-                        <?php check_line($fromOk, 'Expéditeur sur le domaine du site', 'FROM_EMAIL : ' . FROM_EMAIL . ' — attendu …@' . $siteDomain . ', sinon les emails finissent en spam ou sont rejetés'); ?>
+                        <?php check_line($fromOk, 'Expéditeur sur le domaine du site', 'FROM_EMAIL : ' . FROM_EMAIL . ' · attendu …@' . $siteDomain . ', sinon les emails finissent en spam'); ?>
                     <?php else: ?>
                         <?php check_line(smtp_configured(), 'SMTP renseigné', 'serveur : ' . (SMTP_HOST ?: 'vide') . ', compte : ' . (SMTP_USERNAME ?: 'vide')); ?>
-                        <?php check_line($secureOk, 'Port et sécurité cohérents', SMTP_PORT . ' / ' . (SMTP_SECURE ?: 'aucune') . ' — attendu 465/ssl ou 587/tls'); ?>
+                        <?php check_line($secureOk, 'Port et sécurité cohérents', SMTP_PORT . ' / ' . (SMTP_SECURE ?: 'aucune') . ' · attendu 465/ssl ou 587/tls'); ?>
                         <?php check_line($fromOk, 'Expéditeur du même domaine que le compte SMTP', 'FROM_EMAIL : ' . FROM_EMAIL); ?>
                         <?php check_line(!preg_match('/gmail|outlook|hotmail|yahoo|office365/i', SMTP_HOST), 'Serveur SMTP chez o2switch',
                             'o2switch bloque Gmail/Outlook en SMTP : utilise MAIL_TRANSPORT = mail ou la boîte contact@ d\'o2switch'); ?>
                     <?php endif; ?>
                 </ul>
                 <?php if ($pending > 0): ?>
-                    <p style="margin-top: var(--spacing-md);">⏳ <?= $pending ?> compte(s) en attente de confirmation d'email.
-                        <a href="players.php">Les voir dans « Joueurs »</a> (validation manuelle possible).</p>
+                    <p class="s-hint" style="margin-top:0.75rem;"><?= $pending ?> compte(s) en attente de confirmation d'email :
+                        <a class="a-link" href="players.php?filter=pending">les voir dans « Joueurs »</a> (validation manuelle possible).</p>
                 <?php endif; ?>
-            </section>
 
-            <section class="dashboard-section">
-                <h2>✉️ Envoyer un email de test</h2>
-                <form method="POST" class="admin-form">
+                <form method="POST" class="s-form a-diag-mail">
                     <input type="hidden" name="action" value="email">
-                    <div class="form-group">
-                        <label for="to">Adresse de réception</label>
+                    <div class="s-field">
+                        <label for="to">Envoyer un email de test à</label>
                         <input type="email" id="to" name="to" required value="<?= e($to) ?>">
                     </div>
-                    <button type="submit" class="btn btn-primary">Envoyer le test</button>
+                    <button type="submit" class="a-btn a-btn-primary"><?= ui_icon('send', 18) ?> Envoyer le test</button>
                 </form>
             </section>
-
-            <?php if ($result): ?>
-                <section class="dashboard-section">
-                    <h2>Résultat de l'envoi</h2>
-                    <?php if ($result['ok']): ?>
-                        <div class="alert alert-success">
-                            ✅ Le serveur mail a accepté l'email. S'il n'arrive pas d'ici quelques minutes, regarde dans les
-                            <strong>spams</strong> : il faut alors vérifier SPF / DKIM (cPanel › Délivrabilité des emails).
-                        </div>
-                    <?php else: ?>
-                        <div class="alert alert-error">❌ Échec : <?= e($result['error']) ?></div>
-                        <?php if ($result['hint']): ?>
-                            <div class="alert alert-warning">💡 <?= e($result['hint']) ?></div>
-                        <?php endif; ?>
-                    <?php endif; ?>
-
-                    <?php if ($result['log']): ?>
-                        <p style="margin: var(--spacing-md) 0 var(--spacing-sm);">Discussion avec le serveur mail (mot de passe masqué) :</p>
-                        <div class="smtp-log"><?= e(implode("\n", $result['log'])) ?></div>
-                    <?php endif; ?>
-                </section>
-            <?php endif; ?>
         </div>
+
+        <?php if ($result): ?>
+            <section class="a-card" style="margin-top:1rem;">
+                <div class="a-card-head"><h2><?= ui_icon('activity', 18) ?> Résultat de l'envoi</h2></div>
+                <?php if ($result['ok']): ?>
+                    <div class="alert alert-success">Le serveur mail a accepté l'email. S'il n'arrive pas d'ici quelques minutes, regarde dans les
+                        <strong>spams</strong> : vérifie alors SPF / DKIM (cPanel › Délivrabilité des emails).</div>
+                <?php else: ?>
+                    <div class="alert alert-error">Échec : <?= e($result['error']) ?></div>
+                    <?php if ($result['hint']): ?>
+                        <div class="alert alert-warning"><?= e($result['hint']) ?></div>
+                    <?php endif; ?>
+                <?php endif; ?>
+                <?php if ($result['log']): ?>
+                    <p class="s-hint" style="margin:0.75rem 0 0.4rem;">Discussion avec le serveur mail (mot de passe masqué) :</p>
+                    <pre class="a-log"><?= e(implode("\n", $result['log'])) ?></pre>
+                <?php endif; ?>
+            </section>
+        <?php endif; ?>
     </main>
 
     <?php include '../includes/footer.php'; ?>

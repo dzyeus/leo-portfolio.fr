@@ -351,19 +351,10 @@ $templates = [
     ],
 ];
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Message aux joueurs - Administration</title>
-    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head('Message aux joueurs', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
+    <main class="s-wrap">
         <div class="a-page-head">
             <div>
                 <h1>Message aux joueurs</h1>
@@ -422,7 +413,7 @@ $templates = [
                         <?php endforeach; ?>
                     </div>
 
-                    <div class="a-target-extra form-group" data-for="event">
+                    <div class="a-target-extra s-field" data-for="event">
                         <label for="event_id">Partie</label>
                         <?php if (!$events): ?>
                             <p class="a-small a-muted">Aucune partie récente ou à venir.</p>
@@ -440,7 +431,7 @@ $templates = [
                         <?php endif; ?>
                     </div>
 
-                    <div class="a-target-extra form-group" data-for="custom">
+                    <div class="a-target-extra s-field" data-for="custom">
                         <label for="emails">Adresses email</label>
                         <textarea id="emails" name="emails" rows="3" placeholder="joueur@exemple.fr, autre@exemple.fr"><?= e($draft['emails']) ?></textarea>
                         <div class="a-pick">
@@ -452,7 +443,7 @@ $templates = [
                                 <option value="<?= e($pl['email']) ?>"><?= e($pl['pseudo'] . ' – ' . trim(($pl['first_name'] ?? '') . ' ' . ($pl['last_name'] ?? ''))) ?></option>
                             <?php endforeach; ?>
                         </datalist>
-                        <small>Sépare les adresses par une virgule ou un retour à la ligne. Elles peuvent aussi être hors du site.</small>
+                        <span class="s-hint">Sépare les adresses par une virgule ou un retour à la ligne. Elles peuvent aussi être hors du site.</span>
                     </div>
 
                     <div class="a-card-head a-msg-head">
@@ -466,11 +457,11 @@ $templates = [
                     </div>
                     <p class="a-hint" id="tplHint" hidden></p>
 
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="subject">Objet</label>
                         <input type="text" id="subject" name="subject" maxlength="150" value="<?= e($draft['subject']) ?>" placeholder="Ex. : Nouvelle saison, nouvelles règles">
                     </div>
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="body">Message</label>
                         <textarea id="body" name="body" rows="12" placeholder="Salut {prenom},&#10;&#10;…"><?= e($draft['body']) ?></textarea>
                         <div class="a-chips">
@@ -481,7 +472,7 @@ $templates = [
                             <button type="button" class="a-chip" data-insert="{date}" data-event-only>Date</button>
                             <button type="button" class="a-chip" data-insert="{lieu}" data-event-only>Lieu</button>
                         </div>
-                        <small>Laisse une ligne vide entre deux paragraphes · **texte** pour mettre en gras · les liens deviennent cliquables.</small>
+                        <span class="s-hint">Laisse une ligne vide entre deux paragraphes · **texte** pour mettre en gras · les liens deviennent cliquables.</span>
                     </div>
 
                     <div class="alert alert-error a-flash" id="msgErrors" <?= $analysis['errors'] ? '' : 'hidden' ?>>

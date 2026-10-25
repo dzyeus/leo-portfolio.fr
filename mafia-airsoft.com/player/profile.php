@@ -115,8 +115,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($new !== ($_POST['new_password_confirm'] ?? '')) {
             $errors[] = 'Les deux nouveaux mots de passe ne correspondent pas.';
         } else {
-            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")
-                ->execute([password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+            $newHash = password_hash($new, PASSWORD_DEFAULT);
+            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([$newHash, $user['id']]);
+            session_regenerate_id(true);
+            $_SESSION['pwd_fp'] = session_password_fingerprint($newHash); // les autres appareils sont déconnectés
             session_regenerate_id(true);
             $success = 'Mot de passe modifié.';
         }
@@ -131,131 +133,129 @@ $form = [
     'last_name'  => $_POST['last_name'] ?? $user['last_name'],
     'phone'      => $_POST['phone'] ?? $user['phone'],
 ];
+site_head('Mon profil', ['noindex' => true]);
+include '../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon profil - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="../images/favicon.ico">
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
-    <?php include '../includes/header.php'; ?>
+<main class="s-wrap">
+    <a class="s-back" href="dashboard.php"><?= ui_icon('chevronleft', 18) ?> Mon espace</a>
+    <div class="a-page-head">
+        <div>
+            <h1>Mon profil</h1>
+            <div class="a-sub">Tes informations, ton mot de passe, tes alertes et tes données.</div>
+        </div>
+    </div>
 
-    <main class="container page-content">
-        <div class="dashboard">
-            <h1><?= icon('edit') ?> Mon profil</h1>
+    <?php if (!empty($_GET['complete']) && !profile_is_complete($user)): ?>
+        <div class="alert alert-info" data-keep>Renseigne ton prénom et ton nom pour pouvoir réserver : ils apparaissent sur ton billet.</div>
+    <?php endif; ?>
+    <?php if ($success): ?>
+        <div class="alert alert-success"><?= e($success) ?></div>
+    <?php endif; ?>
+    <?php if ($errors): ?>
+        <div class="alert alert-error" role="alert"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
+    <?php endif; ?>
 
-            <?php if (!empty($_GET['complete']) && !profile_is_complete($user)): ?>
-                <div class="alert alert-info">Renseigne ton prénom et ton nom pour pouvoir réserver : ils apparaissent sur ton billet.</div>
-            <?php endif; ?>
-            <?php if ($success): ?>
-                <div class="alert alert-success"><?= e($success) ?></div>
-            <?php endif; ?>
-            <?php if ($errors): ?>
-                <div class="alert alert-error"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
-            <?php endif; ?>
-
-            <section class="dashboard-section">
-                <h2>Mes informations</h2>
-                <form method="POST" class="admin-form">
+    <div class="a-grid a-grid-main">
+        <div class="s-stack">
+            <section class="a-card">
+                <div class="a-card-head"><h2><?= ui_icon('user', 18) ?> Mes informations</h2></div>
+                <form method="POST" class="s-form">
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="profile">
                     <input type="hidden" name="return" value="<?= e($return) ?>">
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="first_name">Prénom *</label>
-                            <input type="text" id="first_name" name="first_name" required maxlength="100" value="<?= e($form['first_name']) ?>">
+                    <div class="s-form-row">
+                        <div class="s-field">
+                            <label for="first_name">Prénom <span class="s-req">*</span></label>
+                            <input type="text" id="first_name" name="first_name" required maxlength="100" autocomplete="given-name" value="<?= e($form['first_name']) ?>">
                         </div>
-                        <div class="form-group">
-                            <label for="last_name">Nom *</label>
-                            <input type="text" id="last_name" name="last_name" required maxlength="100" value="<?= e($form['last_name']) ?>">
+                        <div class="s-field">
+                            <label for="last_name">Nom <span class="s-req">*</span></label>
+                            <input type="text" id="last_name" name="last_name" required maxlength="100" autocomplete="family-name" value="<?= e($form['last_name']) ?>">
                         </div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="pseudo">Pseudo de jeu *</label>
-                            <input type="text" id="pseudo" name="pseudo" required maxlength="30" value="<?= e($form['pseudo']) ?>">
+                    <div class="s-form-row">
+                        <div class="s-field">
+                            <label for="pseudo">Pseudo de jeu <span class="s-req">*</span></label>
+                            <input type="text" id="pseudo" name="pseudo" required maxlength="30" autocomplete="nickname" value="<?= e($form['pseudo']) ?>">
                         </div>
-                        <div class="form-group">
+                        <div class="s-field">
                             <label for="phone">Téléphone</label>
-                            <input type="tel" id="phone" name="phone" maxlength="20" value="<?= e($form['phone']) ?>">
+                            <input type="tel" id="phone" name="phone" maxlength="20" autocomplete="tel" value="<?= e($form['phone']) ?>">
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label>Email</label>
-                        <input type="email" value="<?= e($user['email']) ?>" disabled>
-                        <small>Pour changer d'adresse email, contacte un organisateur.</small>
+                    <div class="s-field">
+                        <label for="email_ro">Email</label>
+                        <input type="email" id="email_ro" value="<?= e($user['email']) ?>" disabled>
+                        <span class="s-hint">Pour changer d'adresse email, contacte un organisateur.</span>
                     </div>
-                    <button type="submit" class="btn btn-primary">Enregistrer</button>
+                    <button type="submit" class="a-btn a-btn-primary"><?= ui_icon('check', 17) ?> Enregistrer</button>
                 </form>
             </section>
 
-            <section class="dashboard-section">
-                <h2>Changer de mot de passe</h2>
-                <form method="POST" class="admin-form">
+            <section class="a-card">
+                <div class="a-card-head"><h2><?= ui_icon('lock', 18) ?> Changer de mot de passe</h2></div>
+                <form method="POST" class="s-form">
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="password">
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="current_password">Mot de passe actuel</label>
                         <input type="password" id="current_password" name="current_password" required autocomplete="current-password">
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
+                    <div class="s-form-row">
+                        <div class="s-field">
                             <label for="new_password">Nouveau mot de passe</label>
                             <input type="password" id="new_password" name="new_password" required minlength="8" autocomplete="new-password">
-                            <small>8 caractères minimum.</small>
+                            <span class="s-hint">8 caractères minimum.</span>
                         </div>
-                        <div class="form-group">
+                        <div class="s-field">
                             <label for="new_password_confirm">Confirmer</label>
                             <input type="password" id="new_password_confirm" name="new_password_confirm" required minlength="8" autocomplete="new-password">
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-secondary">Changer le mot de passe</button>
+                    <button type="submit" class="a-btn">Changer le mot de passe</button>
+                    <p class="s-hint" style="margin-top:0.6rem;">Tes autres appareils seront déconnectés.</p>
                 </form>
             </section>
+        </div>
 
-            <section class="dashboard-section">
-                <h2>Alertes email</h2>
-                <form method="POST" class="admin-form">
+        <div class="s-stack">
+            <section class="a-card">
+                <div class="a-card-head"><h2><?= ui_icon('bell', 18) ?> Alertes email</h2></div>
+                <form method="POST" class="s-form">
                     <input type="hidden" name="action" value="notifications">
-                    <div class="form-group-checkbox">
+                    <div class="s-check">
                         <input type="checkbox" id="notify_new_events" name="notify_new_events" value="1" <?= !empty($user['notify_new_events']) ? 'checked' : '' ?>>
                         <label for="notify_new_events">Me prévenir par email quand une nouvelle partie est ouverte aux inscriptions</label>
                     </div>
-                    <button type="submit" class="btn btn-secondary">Enregistrer</button>
+                    <button type="submit" class="a-btn a-btn-sm">Enregistrer</button>
                 </form>
             </section>
 
-            <section class="dashboard-section">
-                <h2>Mes données</h2>
-                <p style="margin-bottom: var(--spacing-md);">Conformément au RGPD, tu peux télécharger toutes les données liées à ton compte
-                    ou supprimer ton compte. Voir la <a href="../confidentialite.php">politique de confidentialité</a>.</p>
-                <form method="POST" style="margin-bottom: var(--spacing-lg);">
+            <section class="a-card s-danger-zone">
+                <div class="a-card-head"><h2><?= ui_icon('shield', 18) ?> Mes données</h2></div>
+                <p class="s-muted">Conformément au RGPD, tu peux télécharger toutes les données liées à ton compte ou supprimer ton compte.
+                    Voir la <a href="../confidentialite.php">politique de confidentialité</a>.</p>
+                <form method="POST" style="margin:1rem 0 1.25rem;">
                     <input type="hidden" name="action" value="export">
-                    <button type="submit" class="btn btn-secondary">⬇️ Télécharger mes données</button>
+                    <button type="submit" class="a-btn a-btn-block"><?= ui_icon('download', 17) ?> Télécharger mes données</button>
                 </form>
 
                 <?php if ((int)$user['is_admin'] !== 1): ?>
-                    <form method="POST" class="admin-form" onsubmit="return confirm('Supprimer définitivement ton compte ? Cette action est irréversible.');">
+                    <hr class="s-divider">
+                    <form method="POST" class="s-form" data-confirm="Supprimer définitivement ton compte ? Cette action est irréversible.">
                         <input type="hidden" name="action" value="delete_account">
-                        <div class="form-group">
-                            <label for="delete_password">Supprimer mon compte – confirme avec ton mot de passe</label>
-                            <input type="password" id="delete_password" name="delete_password" required autocomplete="current-password">
-                            <small>Tes reçus de paiement restent archivés 10 ans (obligation comptable), sans lien avec un compte.</small>
+                        <div class="s-field">
+                            <label for="delete_password">Supprimer mon compte</label>
+                            <input type="password" id="delete_password" name="delete_password" required autocomplete="current-password" placeholder="Ton mot de passe pour confirmer">
+                            <span class="s-hint">Tes reçus de paiement restent archivés 10 ans (obligation comptable), sans lien avec un compte.</span>
                         </div>
-                        <button type="submit" class="btn btn-danger">Supprimer mon compte</button>
+                        <button type="submit" class="a-btn a-btn-danger a-btn-block"><?= ui_icon('trash', 17) ?> Supprimer mon compte</button>
                     </form>
                 <?php endif; ?>
             </section>
-
-            <a href="dashboard.php" class="btn btn-secondary">← Retour à mon espace</a>
         </div>
-    </main>
-
-    <?php include '../includes/footer.php'; ?>
+    </div>
+</main>
+<?php include '../includes/footer.php'; ?>
 </body>
 </html>

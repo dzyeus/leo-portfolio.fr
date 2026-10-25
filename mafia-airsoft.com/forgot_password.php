@@ -24,41 +24,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sent = true;
 }
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mot de passe oublié - Association Airsoft</title>
-    <link rel="icon" type="image/x-icon" href="images/favicon.ico">
-    <link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-    <?php include 'includes/header.php'; ?>
+<?php site_head('Mot de passe oublié', ['noindex' => true]); include 'includes/header.php'; ?>
 
-    <main class="auth-container">
-        <div class="auth-box">
-            <h1>Mot de passe oublié</h1>
+    <main class="s-wrap">
+        <div class="s-auth"><div class="a-card">
+            <div class="s-auth-head"><img src="images/logo.png" alt="" width="64" height="64"><h1>Mot de passe oublié</h1><p>Indique ton email : on t'envoie un lien pour en choisir un nouveau.</p></div>
 
             <?php if ($sent): ?>
-                <div class="alert alert-success">
+                <div class="alert alert-success" data-keep>
                     Si un compte existe avec cette adresse, tu vas recevoir un email avec un lien
                     pour choisir un nouveau mot de passe (valable 1 heure). Pense à regarder dans les spams.
                 </div>
-                <p class="auth-link"><a href="login.php">Retour à la connexion</a></p>
+                <p class="s-auth-link"><a href="login.php">Retour à la connexion</a></p>
             <?php else: ?>
-                <p style="margin-bottom: var(--spacing-md);">Indique l'email de ton compte, on t'envoie un lien pour changer ton mot de passe.</p>
-                <form method="POST" action="forgot_password.php" class="auth-form">
+                <form method="POST" action="forgot_password.php" class="s-form">
                     <?= csrf_field() ?>
-                    <div class="form-group">
+                    <div class="s-field">
                         <label for="email">Email</label>
                         <input type="email" id="email" name="email" required autocomplete="email">
                     </div>
-                    <button type="submit" class="btn btn-primary">Envoyer le lien</button>
+                    <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block">Envoyer le lien</button>
                 </form>
-                <p class="auth-link"><a href="login.php">Retour à la connexion</a></p>
+                <p class="s-auth-link"><a href="login.php">Retour à la connexion</a></p>
             <?php endif; ?>
-        </div>
+        </div></div>
     </main>
 
     <?php include 'includes/footer.php'; ?>

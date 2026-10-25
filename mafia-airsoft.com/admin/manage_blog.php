@@ -1,475 +1,386 @@
 <?php
+/**
+ * Panel admin – Blog
+ * Liste des articles, éditeur (texte, image à la une, photos de l'article),
+ * publication, suppression.
+ */
 require_once '../config/database.php';
 require_once '../config/session.php';
 requireAdmin();
 
-$message = '';
-$error = '';
-$edit_post = null;
-
-// Récupérer l'article à éditer
-if (isset($_GET['edit'])) {
+/** Article (ou null). */
+function blog_find(PDO $pdo, int $id): ?array
+{
     $stmt = $pdo->prepare("SELECT * FROM blog_posts WHERE id = ?");
-    $stmt->execute([$_GET['edit']]);
-    $edit_post = $stmt->fetch();
-    
-    // Récupérer les images de galerie de l'article
-    if ($edit_post) {
-        $stmt_gallery = $pdo->prepare("SELECT * FROM blog_gallery WHERE blog_post_id = ? ORDER BY display_order ASC");
-        $stmt_gallery->execute([$edit_post['id']]);
-        $gallery_images = $stmt_gallery->fetchAll();
+    $stmt->execute([$id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+/** Slug unique à partir du titre (« Opération » → « operation »). */
+function blog_slug(PDO $pdo, string $title, int $currentId): string
+{
+    $base = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $title);
+    $base = trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($base ?: $title)), '-') ?: 'article';
+    $base = substr($base, 0, 200);
+    $slug = $base;
+    $stmt = $pdo->prepare("SELECT id FROM blog_posts WHERE slug = ? AND id <> ?");
+    for ($n = 2; ; $n++) {
+        $stmt->execute([$slug, $currentId]);
+        if (!$stmt->fetch()) {
+            return $slug;
+        }
+        $slug = $base . '-' . $n;
     }
 }
 
-// Gérer la soumission du formulaire
+/** Enregistre les photos envoyées pour un article. Renvoie le nombre de photos ajoutées. */
+function blog_save_photos(PDO $pdo, int $postId): int
+{
+    $files = $_FILES['gallery_images'] ?? null;
+    if (!$files || !is_array($files['tmp_name'] ?? null)) {
+        return 0;
+    }
+    $stmt = $pdo->prepare("SELECT COALESCE(MAX(display_order), -1) + 1 FROM blog_gallery WHERE blog_post_id = ?");
+    $stmt->execute([$postId]);
+    $order = (int)$stmt->fetchColumn();
+    $insert = $pdo->prepare("INSERT INTO blog_gallery (blog_post_id, image_path, caption, display_order) VALUES (?, ?, '', ?)");
+    $added = 0;
+    foreach ($files['tmp_name'] as $key => $tmp) {
+        $ext = uploaded_image_extension([
+            'error'    => $files['error'][$key] ?? UPLOAD_ERR_NO_FILE,
+            'tmp_name' => $tmp,
+            'size'     => $files['size'][$key] ?? 0,
+        ]);
+        if ($ext === null) {
+            continue;
+        }
+        $name = random_upload_name('gallery', $ext);
+        if (move_uploaded_file($tmp, MAT_ROOT . '/uploads/blog/' . $name)) {
+            $insert->execute([$postId, 'uploads/blog/' . $name, $order++]);
+            $added++;
+        }
+    }
+    return $added;
+}
+
+// =====================================================================
+// Actions
+// =====================================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    
-    if ($action === 'create' || $action === 'update') {
-        $title = trim($_POST['title'] ?? '');
-        $content = trim($_POST['content'] ?? '');
-        $excerpt = trim($_POST['excerpt'] ?? '');
-        $featured_image = trim($_POST['featured_image'] ?? '');
-        $is_published = isset($_POST['is_published']) ? 1 : 0;
-        
-        // Gérer l'upload de l'image
-        if (isset($_FILES['featured_image_file']) && $_FILES['featured_image_file']['error'] === UPLOAD_ERR_OK) {
-            $upload_dir = '../uploads/blog/';
-            if (!is_dir($upload_dir)) {
-                mkdir($upload_dir, 0755, true);
-            }
-            
-            $file_extension = uploaded_image_extension($_FILES['featured_image_file']);
-            
-            if ($file_extension !== null) {
-                $new_filename = random_upload_name('blog', $file_extension);
-                $upload_path = $upload_dir . $new_filename;
-                
-                if (move_uploaded_file($_FILES['featured_image_file']['tmp_name'], $upload_path)) {
-                    // Supprimer l'ancienne image si c'est une mise à jour et qu'elle existe
-                    if ($action === 'update' && !empty($edit_post['featured_image'])) {
-                        delete_upload($edit_post['featured_image'], 'uploads/blog/');
-                    }
-                    $featured_image = 'uploads/blog/' . $new_filename;
-                } else {
-                    $error = 'Erreur lors de l\'upload de l\'image.';
-                }
-            } else {
-                $error = 'Format d\'image non autorisé. Utilisez JPG, PNG, GIF ou WEBP.';
-            }
+    $action = (string)($_POST['action'] ?? '');
+    $postId = (int)($_POST['post_id'] ?? 0);
+
+    if ($action === 'save') {
+        $existing = $postId > 0 ? blog_find($pdo, $postId) : null;
+        if ($postId > 0 && !$existing) {
+            redirect('manage_blog.php');
         }
-        
-        // Image à la une : uniquement un fichier du blog ou une adresse https
-        if ($featured_image !== '' && !preg_match('#^uploads/blog/[A-Za-z0-9_.-]+$#', $featured_image)
-            && !preg_match('#^https://[^\s"\'<>]+$#', $featured_image)) {
-            $featured_image = '';
-            $error = 'Image à la une invalide : utilise un fichier envoyé ou une adresse https://';
+        $title = mb_substr(trim((string)($_POST['title'] ?? '')), 0, 200);
+        $content = trim((string)($_POST['content'] ?? ''));
+        $excerpt = mb_substr(trim((string)($_POST['excerpt'] ?? '')), 0, 600);
+        $isPublished = !empty($_POST['is_published']) ? 1 : 0;
+        $featured = $existing['featured_image'] ?? '';
+        $imageUrl = trim((string)($_POST['featured_image'] ?? ''));
+
+        $errors = [];
+        if ($title === '' || $content === '') {
+            $errors[] = 'Le titre et le texte de l\'article sont obligatoires.';
         }
 
-        // Générer le slug (accents convertis : "Opération" → "operation") et le rendre unique
-        $slug_base = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $title);
-        $slug_base = trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($slug_base ?: $title)), '-') ?: 'article';
-        $slug = $slug_base;
-        $current_id = ($action === 'update') ? (int)($_POST['post_id'] ?? 0) : 0;
-        for ($n = 2; ; $n++) {
-            $stmt_slug = $pdo->prepare("SELECT id FROM blog_posts WHERE slug = ? AND id <> ?");
-            $stmt_slug->execute([$slug, $current_id]);
-            if (!$stmt_slug->fetch()) {
-                break;
-            }
-            $slug = $slug_base . '-' . $n;
-        }
-        
-        if (empty($title) || empty($content)) {
-            $error = 'Le titre et le contenu sont obligatoires.';
-        } else {
-            if ($action === 'create') {
-                $published_at = $is_published ? date('Y-m-d H:i:s') : null;
-                $stmt = $pdo->prepare("
-                    INSERT INTO blog_posts (title, slug, content, excerpt, featured_image, author_id, is_published, published_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                if ($stmt->execute([$title, $slug, $content, $excerpt, $featured_image, $_SESSION['user_id'], $is_published, $published_at])) {
-                    $post_id = $pdo->lastInsertId();
-                    
-                    // Gérer les images de galerie
-                    if (isset($_FILES['gallery_images']) && !empty($_FILES['gallery_images']['name'][0])) {
-                        $upload_dir = '../uploads/blog/';
-                        $display_order = 0;
-                        
-                        foreach ($_FILES['gallery_images']['tmp_name'] as $key => $tmp_name) {
-                            if ($_FILES['gallery_images']['error'][$key] === UPLOAD_ERR_OK) {
-                                $file_extension = uploaded_image_extension([
-                                    'error' => $_FILES['gallery_images']['error'][$key],
-                                    'tmp_name' => $tmp_name,
-                                    'size' => $_FILES['gallery_images']['size'][$key],
-                                ]);
-                                
-                                if ($file_extension !== null) {
-                                    $new_filename = random_upload_name('gallery', $file_extension);
-                                    $upload_path = $upload_dir . $new_filename;
-                                    
-                                    if (move_uploaded_file($tmp_name, $upload_path)) {
-                                        $caption = $_POST['gallery_captions'][$key] ?? '';
-                                        $stmt_gallery = $pdo->prepare("
-                                            INSERT INTO blog_gallery (blog_post_id, image_path, caption, display_order)
-                                            VALUES (?, ?, ?, ?)
-                                        ");
-                                        $stmt_gallery->execute([$post_id, 'uploads/blog/' . $new_filename, $caption, $display_order]);
-                                        $display_order++;
-                                    }
-                                }
-                            }
-                        }
+        // Image à la une : fichier envoyé, adresse https://, ou suppression
+        if (!empty($_FILES['featured_image_file']['name'])) {
+            $ext = uploaded_image_extension($_FILES['featured_image_file'], 5 * 1024 * 1024);
+            if ($ext === null) {
+                $errors[] = 'Image à la une refusée : JPG, PNG, GIF ou WEBP de 5 Mo maximum.';
+            } elseif (!$errors) {
+                $name = random_upload_name('blog', $ext);
+                if (move_uploaded_file($_FILES['featured_image_file']['tmp_name'], MAT_ROOT . '/uploads/blog/' . $name)) {
+                    if ($featured !== '') {
+                        delete_upload($featured, 'uploads/blog/');
                     }
-                    
-                    $message = 'Article créé avec succès !';
-                } else {
-                    $error = 'Erreur lors de la création.';
+                    $featured = 'uploads/blog/' . $name;
                 }
+            }
+        } elseif (!empty($_POST['remove_featured'])) {
+            if ($featured !== '') {
+                delete_upload($featured, 'uploads/blog/');
+            }
+            $featured = '';
+        } elseif ($imageUrl !== '' && $imageUrl !== $featured) {
+            if (preg_match('#^https://[^\s"\'<>]+$#', $imageUrl) && strlen($imageUrl) <= 255) {
+                $featured = $imageUrl;
             } else {
-                $post_id = (int)$_POST['post_id'];
-                $published_at = $is_published && !$edit_post['is_published'] ? date('Y-m-d H:i:s') : $edit_post['published_at'];
-                
-                $stmt = $pdo->prepare("
-                    UPDATE blog_posts 
-                    SET title = ?, slug = ?, content = ?, excerpt = ?, featured_image = ?, is_published = ?, published_at = ?
-                    WHERE id = ?
-                ");
-                if ($stmt->execute([$title, $slug, $content, $excerpt, $featured_image, $is_published, $published_at, $post_id])) {
-                    // Gérer les images de galerie
-                    if (isset($_FILES['gallery_images']) && !empty($_FILES['gallery_images']['name'][0])) {
-                        $upload_dir = '../uploads/blog/';
-                        
-                        // Récupérer l'ordre d'affichage maximal actuel
-                        $stmt_max = $pdo->prepare("SELECT COALESCE(MAX(display_order), -1) as max_order FROM blog_gallery WHERE blog_post_id = ?");
-                        $stmt_max->execute([$post_id]);
-                        $display_order = $stmt_max->fetch()['max_order'] + 1;
-                        
-                        foreach ($_FILES['gallery_images']['tmp_name'] as $key => $tmp_name) {
-                            if ($_FILES['gallery_images']['error'][$key] === UPLOAD_ERR_OK) {
-                                $file_extension = uploaded_image_extension([
-                                    'error' => $_FILES['gallery_images']['error'][$key],
-                                    'tmp_name' => $tmp_name,
-                                    'size' => $_FILES['gallery_images']['size'][$key],
-                                ]);
-                                
-                                if ($file_extension !== null) {
-                                    $new_filename = random_upload_name('gallery', $file_extension);
-                                    $upload_path = $upload_dir . $new_filename;
-                                    
-                                    if (move_uploaded_file($tmp_name, $upload_path)) {
-                                        $caption = $_POST['gallery_captions'][$key] ?? '';
-                                        $stmt_gallery = $pdo->prepare("
-                                            INSERT INTO blog_gallery (blog_post_id, image_path, caption, display_order)
-                                            VALUES (?, ?, ?, ?)
-                                        ");
-                                        $stmt_gallery->execute([$post_id, 'uploads/blog/' . $new_filename, $caption, $display_order]);
-                                        $display_order++;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    $message = 'Article mis à jour !';
-                    $edit_post = null;
-                } else {
-                    $error = 'Erreur lors de la mise à jour.';
-                }
+                $errors[] = 'Adresse de l\'image invalide : elle doit commencer par https://';
             }
         }
-    } elseif ($action === 'delete') {
-        $post_id = $_POST['post_id'];
-        $stmt = $pdo->prepare("DELETE FROM blog_posts WHERE id = ?");
-        if ($stmt->execute([$post_id])) {
-            $message = 'Article supprimé !';
-        }
-    } elseif ($action === 'delete_gallery_image') {
-        $image_id = $_POST['image_id'];
-        
-        // Récupérer le chemin de l'image avant suppression
-        $stmt = $pdo->prepare("SELECT image_path FROM blog_gallery WHERE id = ?");
-        $stmt->execute([$image_id]);
-        $image = $stmt->fetch();
-        
-        if ($image) {
-            // Supprimer l'image de la base de données
-            $stmt = $pdo->prepare("DELETE FROM blog_gallery WHERE id = ?");
-            if ($stmt->execute([$image_id])) {
-                // Supprimer le fichier physique (uniquement dans uploads/blog/)
-                delete_upload($image['image_path'], 'uploads/blog/');
-                $message = 'Image supprimée de la galerie !';
+
+        if ($errors) {
+            $_SESSION['blog_draft'] = ['post_id' => $postId, 'title' => $title, 'content' => $content, 'excerpt' => $excerpt, 'is_published' => $isPublished];
+            foreach ($errors as $err) {
+                flash_set('error', $err);
             }
+            redirect('manage_blog.php?' . ($postId ? 'edit=' . $postId : 'new=1'));
         }
+
+        $slug = blog_slug($pdo, $title, $postId);
+        if ($existing) {
+            $publishedAt = $isPublished ? ($existing['published_at'] ?: date('Y-m-d H:i:s')) : $existing['published_at'];
+            $pdo->prepare("
+                UPDATE blog_posts SET title = ?, slug = ?, content = ?, excerpt = ?, featured_image = ?, is_published = ?, published_at = ?
+                WHERE id = ?
+            ")->execute([$title, $slug, $content, $excerpt, $featured, $isPublished, $publishedAt, $postId]);
+        } else {
+            $pdo->prepare("
+                INSERT INTO blog_posts (title, slug, content, excerpt, featured_image, author_id, is_published, published_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ")->execute([$title, $slug, $content, $excerpt, $featured, current_user_id(), $isPublished, $isPublished ? date('Y-m-d H:i:s') : null]);
+            $postId = (int)$pdo->lastInsertId();
+        }
+        $added = blog_save_photos($pdo, $postId);
+        unset($_SESSION['blog_draft']);
+        flash_set('success', ($existing ? 'Article enregistré' : 'Article créé') . ($isPublished ? ' et publié' : ' (brouillon)')
+            . ($added ? ' · ' . $added . ' photo(s) ajoutée(s)' : '') . '.');
+        redirect('manage_blog.php?edit=' . $postId);
     }
+
+    if ($action === 'caption') {
+        $imageId = (int)($_POST['image_id'] ?? 0);
+        $pdo->prepare("UPDATE blog_gallery SET caption = ? WHERE id = ? AND blog_post_id = ?")
+            ->execute([mb_substr(trim((string)($_POST['caption'] ?? '')), 0, 300), $imageId, $postId]);
+        flash_set('success', 'Légende enregistrée.');
+        redirect('manage_blog.php?edit=' . $postId . '#photos');
+    }
+
+    if ($action === 'delete_gallery_image') {
+        $imageId = (int)($_POST['image_id'] ?? 0);
+        $stmt = $pdo->prepare("SELECT image_path FROM blog_gallery WHERE id = ? AND blog_post_id = ?");
+        $stmt->execute([$imageId, $postId]);
+        if ($image = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $pdo->prepare("DELETE FROM blog_gallery WHERE id = ?")->execute([$imageId]);
+            delete_upload($image['image_path'], 'uploads/blog/');
+            flash_set('success', 'Photo retirée de l\'article.');
+        }
+        redirect('manage_blog.php?edit=' . $postId . '#photos');
+    }
+
+    if ($action === 'delete' && ($post = blog_find($pdo, $postId))) {
+        $stmt = $pdo->prepare("SELECT image_path FROM blog_gallery WHERE blog_post_id = ?");
+        $stmt->execute([$postId]);
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $path) {
+            delete_upload($path, 'uploads/blog/');
+        }
+        if (!empty($post['featured_image'])) {
+            delete_upload($post['featured_image'], 'uploads/blog/');
+        }
+        $pdo->prepare("DELETE FROM blog_posts WHERE id = ?")->execute([$postId]); // les photos suivent (clé étrangère)
+        flash_set('success', 'Article « ' . $post['title'] . ' » supprimé.');
+    }
+    redirect('manage_blog.php');
 }
 
-// Récupérer tous les articles
-$stmt = $pdo->query("
-    SELECT bp.*, u.pseudo as author_name
-    FROM blog_posts bp
-    JOIN users u ON bp.author_id = u.id
+// =====================================================================
+// Affichage
+// =====================================================================
+$editId = (int)($_GET['edit'] ?? 0);
+$isEditor = $editId > 0 || isset($_GET['new']);
+$post = $editId > 0 ? blog_find($pdo, $editId) : null;
+if ($editId > 0 && !$post) {
+    redirect('manage_blog.php');
+}
+$photos = [];
+if ($post) {
+    $stmt = $pdo->prepare("SELECT * FROM blog_gallery WHERE blog_post_id = ? ORDER BY display_order ASC, id ASC");
+    $stmt->execute([$post['id']]);
+    $photos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+// Saisie gardée après une erreur
+$draft = $_SESSION['blog_draft'] ?? null;
+unset($_SESSION['blog_draft']);
+$form = $post ?? ['title' => '', 'content' => '', 'excerpt' => '', 'featured_image' => '', 'is_published' => 1];
+if ($draft && (int)$draft['post_id'] === (int)($post['id'] ?? 0)) {
+    $form = array_merge($form, $draft);
+}
+
+$posts = $pdo->query("
+    SELECT bp.*, u.pseudo AS author_name,
+           (SELECT COUNT(*) FROM blog_gallery g WHERE g.blog_post_id = bp.id) AS photos
+    FROM blog_posts bp LEFT JOIN users u ON bp.author_id = u.id
     ORDER BY bp.created_at DESC
-");
-$posts = $stmt->fetchAll();
+")->fetchAll(PDO::FETCH_ASSOC);
+$flashes = flash_get();
+$cover = (string)($form['featured_image'] ?? '');
+$coverSrc = $cover === '' ? '' : (str_starts_with($cover, 'https://') ? $cover : '../' . $cover);
 ?>
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion du Blog - Administration</title>
-    <link rel="stylesheet" href="../css/style.css">
-</head>
-<body>
+<?php site_head($isEditor ? ($post ? 'Modifier l\'article' : 'Nouvel article') : 'Blog', ['admin' => true]); ?>
     <?php include '../includes/header.php'; ?>
 
-    <main class="container page-content">
-        <h1><?= icon('edit') ?> Gestion du Blog</h1>
-
-        <?php if ($message): ?>
-            <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
-        <?php endif; ?>
-        <?php if ($error): ?>
-            <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
-        <?php endif; ?>
-
-        <!-- Formulaire de création/édition -->
-        <section class="admin-section">
-            <h2><?= $edit_post ? icon('edit') . ' Modifier l\'article' : icon('plus') . ' Nouvel article' ?></h2>
-            <form method="POST" class="admin-form" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="<?= $edit_post ? 'update' : 'create' ?>">
-                <?php if ($edit_post): ?>
-                    <input type="hidden" name="post_id" value="<?= $edit_post['id'] ?>">
+    <main class="s-wrap">
+        <?php if (!$isEditor): ?>
+            <div class="a-page-head">
+                <div>
+                    <h1>Blog</h1>
+                    <div class="a-sub"><?= count($posts) ?> article(s) · <?= count(array_filter($posts, fn($p) => !empty($p['is_published']))) ?> publié(s)</div>
+                </div>
+                <div class="a-actions">
+                    <a href="manage_blog.php?new=1" class="a-btn a-btn-primary"><?= ui_icon('plus', 18) ?> Nouvel article</a>
+                </div>
+            </div>
+        <?php else: ?>
+            <div class="a-page-head">
+                <div>
+                    <a class="a-link" href="manage_blog.php">← Tous les articles</a>
+                    <h1><?= $post ? 'Modifier l\'article' : 'Nouvel article' ?></h1>
+                    <?php if ($post): ?><div class="a-sub"><?= e($post['title']) ?></div><?php endif; ?>
+                </div>
+                <?php if ($post && !empty($post['is_published'])): ?>
+                    <div class="a-actions">
+                        <a href="../blog_post.php?slug=<?= e(urlencode($post['slug'])) ?>" class="a-btn" target="_blank" rel="noopener"><?= ui_icon('external', 18) ?> Voir sur le site</a>
+                    </div>
                 <?php endif; ?>
+            </div>
+        <?php endif; ?>
 
-                <div class="form-group">
-                    <label for="title">Titre *</label>
-                    <input type="text" id="title" name="title" required 
-                           value="<?= htmlspecialchars($edit_post['title'] ?? '') ?>">
-                </div>
+        <?php foreach ($flashes as $flash): ?>
+            <div class="alert alert-<?= e($flash['type']) ?> a-flash"><?= e($flash['message']) ?></div>
+        <?php endforeach; ?>
 
-                <div class="form-group">
-                    <label for="excerpt">Extrait (résumé court)</label>
-                    <textarea id="excerpt" name="excerpt" rows="3"><?= htmlspecialchars($edit_post['excerpt'] ?? '') ?></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="content">Contenu *</label>
-                    <textarea id="content" name="content" rows="15" required><?= htmlspecialchars($edit_post['content'] ?? '') ?></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="featured_image">URL de l'image (optionnel)</label>
-                    <input type="url" id="featured_image" name="featured_image" 
-                           value="<?= htmlspecialchars($edit_post['featured_image'] ?? '') ?>"
-                           placeholder="https://exemple.com/image.jpg">
-                    <small style="display: block; margin-top: 5px; color: #666;">Ou utilisez le bouton ci-dessous pour uploader une image</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="featured_image_file">Uploader une image</label>
-                    <input type="file" id="featured_image_file" name="featured_image_file" 
-                           accept="image/jpeg,image/png,image/gif,image/webp"
-                           onchange="previewBlogImage(event)">
-                    <small style="display: block; margin-top: 5px; color: #666;">Formats acceptés : JPG, PNG, GIF, WEBP</small>
-                    
-                    <?php if (!empty($edit_post['featured_image'])): ?>
-                        <div id="current-image" style="margin-top: 15px;">
-                            <p><strong>Image actuelle :</strong></p>
-                            <img src="../<?= htmlspecialchars($edit_post['featured_image']) ?>" 
-                                 alt="Image actuelle" 
-                                 style="max-width: 300px; max-height: 200px; border-radius: 5px; border: 2px solid #ddd;">
-                        </div>
-                    <?php endif; ?>
-                    
-                    <div id="image-preview" style="margin-top: 15px; display: none;">
-                        <p><strong>Aperçu de la nouvelle image :</strong></p>
-                        <img id="preview-img" src="" alt="Aperçu" 
-                             style="max-width: 300px; max-height: 200px; border-radius: 5px; border: 2px solid #4CAF50;">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" name="is_published" 
-                               <?= ($edit_post['is_published'] ?? 0) ? 'checked' : '' ?>>
-                        Publier l'article
-                    </label>
-                </div>
-
-                <!-- Section Galerie d'images -->
-                <div class="form-group">
-                    <label for="gallery_images">📷 Galerie d'images (plusieurs photos possibles)</label>
-                    <input type="file" id="gallery_images" name="gallery_images[]" 
-                           accept="image/jpeg,image/png,image/gif,image/webp"
-                           multiple
-                           onchange="previewGalleryImages(event)">
-                    <small style="display: block; margin-top: 5px; color: #666;">
-                        Vous pouvez sélectionner plusieurs images en même temps (Ctrl + clic). Formats acceptés : JPG, PNG, GIF, WEBP
-                    </small>
-                    
-                    <div id="gallery-preview" style="margin-top: 15px; display: none;">
-                        <p><strong>Aperçu des nouvelles images :</strong></p>
-                        <div id="gallery-preview-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 10px;">
-                        </div>
-                    </div>
-                    
-                    <?php if (!empty($gallery_images)): ?>
-                        <div style="margin-top: 20px;">
-                            <p><strong>Images actuelles de la galerie :</strong></p>
-                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 10px;">
-                                <?php foreach ($gallery_images as $gimage): ?>
-                                    <div class="gallery-item" style="position: relative; border: 2px solid #ddd; border-radius: 5px; padding: 10px;">
-                                        <img src="../<?= htmlspecialchars($gimage['image_path']) ?>" 
-                                             alt="Image galerie" 
-                                             style="width: 100%; height: 150px; object-fit: cover; border-radius: 5px;">
-                                        <?php if ($gimage['caption']): ?>
-                                            <p style="margin: 5px 0; font-size: 0.9em; color: #666;"><?= htmlspecialchars($gimage['caption']) ?></p>
-                                        <?php endif; ?>
-                                        <form method="POST" style="margin-top: 10px;" onsubmit="return confirm('Supprimer cette image ?');">
-                                            <input type="hidden" name="action" value="delete_gallery_image">
-                                            <input type="hidden" name="image_id" value="<?= $gimage['id'] ?>">
-                                            <button type="submit" class="btn btn-danger" style="width: 100%; padding: 5px; font-size: 0.85em;">
-                                                🗑️ Supprimer
-                                            </button>
-                                        </form>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">
-                        <?= $edit_post ? 'Mettre à jour' : 'Créer l\'article' ?>
-                    </button>
-                    <?php if ($edit_post): ?>
-                        <a href="manage_blog.php" class="btn btn-secondary">Annuler</a>
-                    <?php endif; ?>
-                </div>
-            </form>
-        </section>
-
-        <!-- Liste des articles -->
-        <section class="admin-section">
-            <h2>📚 Tous les articles</h2>
-            <?php if (empty($posts)): ?>
-                <p class="no-data">Aucun article créé.</p>
-            <?php else: ?>
-                <div class="admin-table-wrapper">
-                    <table class="admin-table">
+        <?php if (!$isEditor): ?>
+            <section class="a-card">
+                <?php if (!$posts): ?>
+                    <p class="a-empty">Aucun article pour l'instant. <a class="a-link" href="manage_blog.php?new=1">Écrire le premier</a></p>
+                <?php else: ?>
+                    <table class="rtable">
                         <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Titre</th>
-                                <th>Auteur</th>
-                                <th>Date</th>
-                                <th>Vues</th>
-                                <th>Statut</th>
-                                <th>Actions</th>
-                            </tr>
+                            <tr><th>Article</th><th>Statut</th><th>Date</th><th>Lectures</th><th style="text-align:right;">Actions</th></tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($posts as $post): ?>
+                            <?php foreach ($posts as $p): ?>
                                 <tr>
-                                    <td><?= $post['id'] ?></td>
-                                    <td><strong><?= htmlspecialchars($post['title']) ?></strong></td>
-                                    <td><?= htmlspecialchars($post['author_name']) ?></td>
-                                    <td><?= date('d/m/Y', strtotime($post['created_at'])) ?></td>
-                                    <td><?= $post['views'] ?></td>
-                                    <td>
-                                        <?php if ($post['is_published']): ?>
-                                            <span class="badge badge-success">Publié</span>
-                                        <?php else: ?>
-                                            <span class="badge badge-warning">Brouillon</span>
-                                        <?php endif; ?>
+                                    <td class="t-head">
+                                        <a class="t-title" href="manage_blog.php?edit=<?= (int)$p['id'] ?>"><?= e($p['title']) ?></a>
+                                        <span class="t-sub">par <?= e($p['author_name'] ?? '?') ?><?= (int)$p['photos'] ? ' · ' . (int)$p['photos'] . ' photo(s)' : '' ?></span>
                                     </td>
-                                    <td class="table-actions">
-                                        <?php if ($post['is_published']): ?>
-                                            <a href="../blog_post.php?slug=<?= urlencode($post['slug']) ?>" class="btn-action" target="_blank" title="Voir"><?= icon('eye') ?></a>
-                                        <?php endif; ?>
-                                        <a href="?edit=<?= $post['id'] ?>" class="btn-action" title="Modifier"><?= icon('edit') ?></a>
-                                        <form method="POST" style="display:inline;" onsubmit="return confirm('Supprimer cet article ?');">
-                                            <input type="hidden" name="action" value="delete">
-                                            <input type="hidden" name="post_id" value="<?= $post['id'] ?>">
-                                            <button type="submit" class="btn-action" title="Supprimer"><?= icon('trash') ?></button>
-                                        </form>
+                                    <td data-label="Statut"><?= !empty($p['is_published']) ? '<span class="a-badge st-ok">Publié</span>' : '<span class="a-badge st-muted">Brouillon</span>' ?></td>
+                                    <td data-label="Date"><span><?= e(date('d/m/Y', strtotime($p['published_at'] ?: $p['created_at']))) ?></span></td>
+                                    <td data-label="Lectures"><span class="t-num"><?= (int)$p['views'] ?></span></td>
+                                    <td class="t-actions-cell">
+                                        <div class="t-actions">
+                                            <a href="manage_blog.php?edit=<?= (int)$p['id'] ?>" class="a-btn a-btn-sm"><?= ui_icon('edit', 16) ?> Modifier</a>
+                                            <?php if (!empty($p['is_published'])): ?>
+                                                <a href="../blog_post.php?slug=<?= e(urlencode($p['slug'])) ?>" class="a-btn a-btn-sm a-btn-icon" target="_blank" rel="noopener" title="Voir sur le site"><?= ui_icon('eye', 16) ?></a>
+                                            <?php endif; ?>
+                                            <form method="POST" class="a-inline" data-confirm="<?= e('Supprimer l\'article « ' . $p['title'] . ' » et ses photos ?') ?>">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="post_id" value="<?= (int)$p['id'] ?>">
+                                                <button type="submit" class="a-btn a-btn-sm a-btn-icon a-btn-danger" title="Supprimer"><?= ui_icon('trash', 16) ?></button>
+                                            </form>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                <?php endif; ?>
+            </section>
+        <?php else: ?>
+            <form method="POST" enctype="multipart/form-data" class="s-form" data-warn-unsaved>
+                <input type="hidden" name="action" value="save">
+                <input type="hidden" name="post_id" value="<?= (int)($post['id'] ?? 0) ?>">
+                <div class="a-grid a-grid-main">
+                    <div class="a-stack">
+                        <section class="a-card">
+                            <div class="a-card-head"><h2><?= ui_icon('file', 18) ?> Article</h2></div>
+                            <div class="s-field">
+                                <label for="title">Titre <span class="s-req">*</span></label>
+                                <input type="text" id="title" name="title" required maxlength="200" value="<?= e($form['title']) ?>">
+                            </div>
+                            <div class="s-field">
+                                <label for="excerpt">Résumé</label>
+                                <textarea id="excerpt" name="excerpt" rows="2" maxlength="600" placeholder="1 ou 2 phrases affichées dans la liste du blog"><?= e($form['excerpt']) ?></textarea>
+                            </div>
+                            <div class="s-field" style="margin-bottom:0;">
+                                <label for="content">Texte <span class="s-req">*</span></label>
+                                <textarea id="content" name="content" rows="16" required><?= e($form['content']) ?></textarea>
+                                <span class="s-hint">Laisse une ligne vide entre deux paragraphes.</span>
+                            </div>
+                        </section>
+
+                        <section class="a-card" id="photos">
+                            <div class="a-card-head"><h2><?= ui_icon('image', 18) ?> Photos de l'article</h2>
+                                <span class="a-badge st-muted"><?= count($photos) ?></span></div>
+                            <div class="s-field">
+                                <label for="gallery_images">Ajouter des photos</label>
+                                <input type="file" id="gallery_images" name="gallery_images[]" accept="image/jpeg,image/png,image/gif,image/webp" multiple>
+                                <span class="s-hint">Tu peux en choisir plusieurs d'un coup. Elles sont ajoutées en enregistrant l'article.</span>
+                            </div>
+                            <?php if ($photos): ?>
+                                <div class="a-thumbs">
+                                    <?php foreach ($photos as $ph): ?>
+                                        <div class="a-thumb">
+                                            <img src="../<?= e($ph['image_path']) ?>" alt="<?= e($ph['caption'] ?: 'Photo de l\'article') ?>" loading="lazy">
+                                            <div class="a-thumb-body">
+                                                <input type="text" form="cap<?= (int)$ph['id'] ?>" name="caption" maxlength="300" value="<?= e($ph['caption']) ?>" placeholder="Légende" aria-label="Légende de la photo">
+                                                <div class="a-thumb-actions">
+                                                    <button type="submit" form="cap<?= (int)$ph['id'] ?>" class="a-btn a-btn-sm" title="Enregistrer la légende"><?= ui_icon('check', 16) ?></button>
+                                                    <button type="submit" form="del<?= (int)$ph['id'] ?>" class="a-btn a-btn-sm a-btn-danger" title="Retirer la photo"><?= ui_icon('trash', 16) ?></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </section>
+                    </div>
+
+                    <aside class="a-stack">
+                        <section class="a-card">
+                            <div class="a-card-head"><h2><?= ui_icon('settings', 18) ?> Publication</h2></div>
+                            <div class="s-check">
+                                <input type="checkbox" id="is_published" name="is_published" value="1" <?= !empty($form['is_published']) ? 'checked' : '' ?>>
+                                <label for="is_published">Publié sur le site</label>
+                            </div>
+                            <p class="s-hint" style="margin-bottom:1rem;">Décoché : l'article reste un brouillon visible seulement ici.</p>
+                            <button type="submit" class="a-btn a-btn-primary a-btn-lg a-btn-block"><?= ui_icon('check', 18) ?> Enregistrer</button>
+                            <a href="manage_blog.php" class="a-btn a-btn-block" style="margin-top:0.5rem;">Annuler</a>
+                        </section>
+
+                        <section class="a-card">
+                            <div class="a-card-head"><h2><?= ui_icon('image', 18) ?> Image à la une</h2></div>
+                            <?php if ($coverSrc !== ''): ?>
+                                <img class="a-cover" src="<?= e($coverSrc) ?>" alt="Image à la une actuelle">
+                                <div class="s-check">
+                                    <input type="checkbox" id="remove_featured" name="remove_featured" value="1">
+                                    <label for="remove_featured">Retirer cette image</label>
+                                </div>
+                            <?php endif; ?>
+                            <div class="s-field">
+                                <label for="featured_image_file"><?= $coverSrc !== '' ? 'Remplacer par' : 'Choisir une image' ?></label>
+                                <input type="file" id="featured_image_file" name="featured_image_file" accept="image/jpeg,image/png,image/gif,image/webp">
+                            </div>
+                            <div class="s-field" style="margin-bottom:0;">
+                                <label for="featured_image">Ou adresse d'une image</label>
+                                <input type="url" id="featured_image" name="featured_image" maxlength="255" placeholder="https://…" value="<?= e(str_starts_with($cover, 'https://') ? $cover : '') ?>">
+                            </div>
+                        </section>
+                    </aside>
                 </div>
-            <?php endif; ?>
-        </section>
+            </form>
+
+            <?php foreach ($photos as $ph): ?>
+                <form method="POST" id="cap<?= (int)$ph['id'] ?>" hidden>
+                    <input type="hidden" name="action" value="caption">
+                    <input type="hidden" name="post_id" value="<?= (int)$post['id'] ?>">
+                    <input type="hidden" name="image_id" value="<?= (int)$ph['id'] ?>">
+                </form>
+                <form method="POST" id="del<?= (int)$ph['id'] ?>" hidden data-confirm="Retirer cette photo de l'article ?">
+                    <input type="hidden" name="action" value="delete_gallery_image">
+                    <input type="hidden" name="post_id" value="<?= (int)$post['id'] ?>">
+                    <input type="hidden" name="image_id" value="<?= (int)$ph['id'] ?>">
+                </form>
+            <?php endforeach; ?>
+        <?php endif; ?>
     </main>
 
     <?php include '../includes/footer.php'; ?>
-    
-    <script>
-        function previewBlogImage(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const preview = document.getElementById('image-preview');
-                    const previewImg = document.getElementById('preview-img');
-                    previewImg.src = e.target.result;
-                    preview.style.display = 'block';
-                    
-                    // Masquer l'image actuelle si elle existe
-                    const currentImage = document.getElementById('current-image');
-                    if (currentImage) {
-                        currentImage.style.opacity = '0.5';
-                    }
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-        
-        function previewGalleryImages(event) {
-            const files = event.target.files;
-            const container = document.getElementById('gallery-preview-container');
-            const preview = document.getElementById('gallery-preview');
-            
-            if (files.length > 0) {
-                container.innerHTML = '';
-                preview.style.display = 'block';
-                
-                Array.from(files).forEach((file, index) => {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const div = document.createElement('div');
-                        div.style.cssText = 'position: relative; border: 2px solid #4CAF50; border-radius: 5px; padding: 10px;';
-                        
-                        const img = document.createElement('img');
-                        img.src = e.target.result;
-                        img.style.cssText = 'width: 100%; height: 150px; object-fit: cover; border-radius: 5px;';
-                        
-                        const captionLabel = document.createElement('label');
-                        captionLabel.textContent = 'Légende (optionnel) :';
-                        captionLabel.style.cssText = 'display: block; margin-top: 10px; font-size: 0.85em; color: #666;';
-                        
-                        const captionInput = document.createElement('input');
-                        captionInput.type = 'text';
-                        captionInput.name = 'gallery_captions[]';
-                        captionInput.placeholder = 'Description de l\'image...';
-                        captionInput.style.cssText = 'width: 100%; padding: 5px; margin-top: 5px; border: 1px solid #ddd; border-radius: 3px; font-size: 0.85em;';
-                        
-                        div.appendChild(img);
-                        div.appendChild(captionLabel);
-                        div.appendChild(captionInput);
-                        container.appendChild(div);
-                    };
-                    reader.readAsDataURL(file);
-                });
-            } else {
-                preview.style.display = 'none';
-            }
-        }
-    </script>
 </body>
 </html>
