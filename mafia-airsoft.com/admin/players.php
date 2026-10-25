@@ -76,29 +76,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         } elseif ($action === 'verify_email') {
             $pdo->prepare("UPDATE users SET email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ?")->execute([$userId]);
             flash_set('success', 'Email de ' . $target['pseudo'] . ' validé : il peut se connecter.');
-        } elseif ($action === 'update_email') {
-            $newEmail = mb_strtolower(trim((string)($_POST['email'] ?? '')));
-            $taken = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = ? AND id <> ?");
-            $taken->execute([$newEmail, $userId]);
-            if (!filter_var($newEmail, FILTER_VALIDATE_EMAIL) || mb_strlen($newEmail) > 100) {
-                flash_set('error', 'Adresse email invalide : rien n\'a été modifié.');
-            } elseif ($newEmail === mb_strtolower($target['email'])) {
-                flash_set('info', 'C\'est déjà l\'adresse de ' . $target['pseudo'] . '.');
-            } elseif ($taken->fetchColumn()) {
-                flash_set('error', 'Cette adresse est déjà utilisée par un autre compte.');
-            } else {
-                // Changée par un organisateur en accord avec le joueur : le compte reste confirmé
-                $pdo->prepare("UPDATE users SET email = ?, email_verified_at = COALESCE(email_verified_at, NOW()) WHERE id = ?")
-                    ->execute([$newEmail, $userId]);
-                $html = '<h2 style="color:#ffffff;margin-top:0;">Adresse email mise à jour</h2>'
-                    . '<p>Salut ' . e($target['pseudo']) . ', un organisateur a enregistré cette adresse sur ton compte ' . e(SITE_NAME) . '. '
-                    . 'C\'est désormais elle qui sert pour te connecter et recevoir tes billets.</p>'
-                    . mail_button(SITE_URL . '/login.php', 'Me connecter')
-                    . '<p style="font-size:13px;color:#a3a3a3;">Si ce n\'est pas ton compte, ignore cet email ou réponds-nous.</p>';
-                $sent = send_mail($newEmail, $target['pseudo'], 'Ton adresse email a été mise à jour', $html);
-                flash_set('success', 'Email de ' . $target['pseudo'] . ' changé en ' . $newEmail
-                    . ($sent ? ' : un email de vérification vient de lui être envoyé.' : ' (l\'email de vérification n\'a pas pu partir : voir Diagnostic).'));
-            }
         } elseif ($action === 'resend_verification') {
             if (!empty($target['email_verified_at'])) {
                 flash_set('info', 'Ce compte est déjà confirmé.');
@@ -294,8 +271,6 @@ $flashes = flash_get();
                                 <td data-label="Contact">
                                     <span>
                                         <a class="a-link" href="mailto:<?= e($p['email']) ?>"><?= e($p['email']) ?></a>
-                                        <button type="button" class="a-email-edit" title="Corriger l'adresse email"
-                                                data-user="<?= (int)$p['id'] ?>" data-email="<?= e($p['email']) ?>" data-pseudo="<?= e($p['pseudo']) ?>"><?= admin_svg('edit', 14) ?></button>
                                         <?php if ($p['phone']): ?><span class="t-sub"><a class="a-link" href="tel:<?= e(preg_replace('/[^0-9+]/', '', $p['phone'])) ?>"><?= e($p['phone']) ?></a></span><?php endif; ?>
                                     </span>
                                 </td>
@@ -353,29 +328,7 @@ $flashes = flash_get();
                 </table>
             <?php endif; ?>
         </section>
-        <!-- Correction d'une adresse email (rempli par le bouton ✎ à côté de l'adresse) -->
-        <form id="emailForm" method="POST" action="<?= e($backUrl) ?>" hidden>
-            <input type="hidden" name="action" value="update_email">
-            <input type="hidden" name="user_id" value="">
-            <input type="hidden" name="email" value="">
-        </form>
     </main>
-
-    <script>
-    document.querySelectorAll('.a-email-edit').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var current = btn.getAttribute('data-email');
-            var value = prompt('Nouvelle adresse email de ' + btn.getAttribute('data-pseudo') + ' :', current);
-            if (value === null) { return; }
-            value = value.trim();
-            if (!value || value.toLowerCase() === current.toLowerCase()) { return; }
-            var f = document.getElementById('emailForm');
-            f.elements['user_id'].value = btn.getAttribute('data-user');
-            f.elements['email'].value = value;
-            f.submit();
-        });
-    });
-    </script>
 
     <?php include '../includes/footer.php'; ?>
 </body>

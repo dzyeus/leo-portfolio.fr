@@ -563,11 +563,3 @@ details.a-todo .a-alerts { margin: 0; padding: 0.75rem; }
     .a-choice { padding: 0.55rem 0.6rem; }
     .a-choice-title { font-size: 0.86rem; }
 }
-
-/* Bouton ✎ pour corriger l'adresse email d'un joueur */
-.a-email-edit {
-    display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
-    width: 26px; height: 26px; margin-left: 0.3rem; padding: 0; border-radius: 6px;
-    border: 1px solid #333; background: #1a1a1a; color: #a3a3a3; cursor: pointer;
-}
-.a-email-edit:hover { color: #fff; border-color: var(--primary); }
