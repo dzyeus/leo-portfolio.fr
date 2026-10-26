@@ -42,7 +42,7 @@ function admin_current_section(): string
         'events.php', 'create_event.php', 'edit_event.php', 'view_event.php',
         'manage_teams.php', 'delete_event.php', 'duplicate_event.php' => 'events',
         'orders.php'                                  => 'orders',
-        'players.php'                                 => 'players',
+        'players.php', 'player.php'                   => 'players',
         'message.php'                                 => 'message',
         'manage_blog.php'                             => 'blog',
         'manage_gallery.php'                          => 'gallery',

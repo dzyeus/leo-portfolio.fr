@@ -254,7 +254,7 @@ $flashes = flash_get();
                                             <span class="a-avatar a-avatar-empty"><?= e(mb_strtoupper(mb_substr($p['pseudo'], 0, 1))) ?></span>
                                         <?php endif; ?>
                                         <span style="min-width:0;">
-                                            <span class="t-title"><?= e($p['pseudo']) ?><?= $isMe ? ' (toi)' : '' ?></span>
+                                            <a class="t-title" href="player.php?id=<?= (int)$p['id'] ?>"><?= e($p['pseudo']) ?><?= $isMe ? ' (toi)' : '' ?></a>
                                             <span class="t-sub"><?= e(full_name($p['first_name'], $p['last_name']) ?: 'Nom non renseigné') ?> · membre depuis <?= e(date('m/Y', strtotime($p['created_at']))) ?></span>
                                         </span>
                                     </span>
@@ -271,7 +271,7 @@ $flashes = flash_get();
                                 </td>
                                 <td data-label="Payé"><span class="t-num"><?= e(format_price((int)$p['spent'])) ?></span></td>
                                 <td data-label="Statut">
-                                    <span style="display:inline-flex;flex-wrap:wrap;gap:0.3rem;justify-content:flex-end;">
+                                    <span class="t-badges">
                                         <?php if ((int)$p['is_admin'] === 1): ?><span class="a-badge st-danger">Admin</span><?php endif; ?>
                                         <?php if (empty($p['email_verified_at'])): ?><span class="a-badge st-warn">Email à confirmer</span>
                                         <?php else: ?><span class="a-badge st-ok">Confirmé</span><?php endif; ?>
@@ -285,31 +285,15 @@ $flashes = flash_get();
                                                 <input type="hidden" name="action" value="verify_email"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
                                                 <button type="submit" class="a-btn a-btn-sm a-btn-ok"><?= admin_svg('check', 16) ?> Valider</button>
                                             </form>
-                                            <form class="a-inline" method="POST" action="<?= e($backUrl) ?>">
-                                                <input type="hidden" name="action" value="resend_verification"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
-                                                <button type="submit" class="a-btn a-btn-sm a-btn-icon" title="Renvoyer l'email de confirmation"><?= admin_svg('mail', 16) ?></button>
-                                            </form>
                                         <?php endif; ?>
+                                        <a href="player.php?id=<?= (int)$p['id'] ?>" class="a-btn a-btn-sm" title="Voir le compte de <?= e($p['pseudo']) ?>"><?= admin_svg('eye', 16) ?> Voir</a>
+                                        <a href="player.php?id=<?= (int)$p['id'] ?>&amp;edit=1#modifier" class="a-btn a-btn-sm" title="Modifier le compte de <?= e($p['pseudo']) ?>"><?= admin_svg('edit', 16) ?> Modifier</a>
                                         <a href="message.php?to=<?= urlencode($p['email']) ?>" class="a-btn a-btn-sm a-btn-icon" title="Lui écrire"><?= admin_svg('send', 16) ?></a>
-                                        <a href="orders.php?q=<?= urlencode($p['email']) ?>" class="a-btn a-btn-sm a-btn-icon" title="Ses réservations"><?= admin_svg('card', 16) ?></a>
-                                        <form class="a-inline" method="POST" enctype="multipart/form-data" action="<?= e($backUrl) ?>">
-                                            <input type="hidden" name="action" value="update_picture"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
-                                            <label class="a-btn a-btn-sm a-btn-icon" title="Changer la photo" style="margin:0;"><?= admin_svg('image', 16) ?>
-                                                <input type="file" name="profile_picture" accept="image/*" style="display:none;" onchange="this.form.submit()"></label>
-                                        </form>
-                                        <?php if (!$isMe): ?>
-                                            <form class="a-inline" method="POST" action="<?= e($backUrl) ?>"
-                                                  onsubmit="return confirm(<?= e(js_str((int)$p['is_admin'] === 1 ? 'Retirer les droits administrateur de ' . $p['pseudo'] . ' ?' : 'Donner les droits administrateur à ' . $p['pseudo'] . ' ? Il aura accès à tout le panel (paiements, joueurs, scanner).')) ?>);">
-                                                <input type="hidden" name="action" value="toggle_admin"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
-                                                <button type="submit" class="a-btn a-btn-sm a-btn-icon" title="<?= (int)$p['is_admin'] === 1 ? 'Retirer les droits admin' : 'Nommer administrateur' ?>"><?= admin_svg('shield', 16) ?></button>
+                                        <?php if (!$isMe && (int)$p['is_admin'] !== 1): ?>
+                                            <form class="a-inline" method="POST" action="<?= e($backUrl) ?>" data-confirm="<?= e('Supprimer définitivement le compte de ' . $p['pseudo'] . ' ?') ?>">
+                                                <input type="hidden" name="action" value="delete_player"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
+                                                <button type="submit" class="a-btn a-btn-sm a-btn-icon a-btn-danger" title="Supprimer le compte"><?= admin_svg('trash', 16) ?></button>
                                             </form>
-                                            <?php if ((int)$p['is_admin'] !== 1): ?>
-                                                <form class="a-inline" method="POST" action="<?= e($backUrl) ?>"
-                                                      onsubmit="return confirm(<?= e(js_str('Supprimer définitivement le compte de ' . $p['pseudo'] . ' ?')) ?>);">
-                                                    <input type="hidden" name="action" value="delete_player"><input type="hidden" name="user_id" value="<?= (int)$p['id'] ?>">
-                                                    <button type="submit" class="a-btn a-btn-sm a-btn-icon a-btn-danger" title="Supprimer le compte"><?= admin_svg('trash', 16) ?></button>
-                                                </form>
-                                            <?php endif; ?>
                                         <?php endif; ?>
                                     </div>
                                 </td>

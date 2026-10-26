@@ -335,3 +335,22 @@ button.a-tab { cursor: pointer; font: inherit; font-weight: 700; font-size: 0.88
 .is-success > .a-scan-dot { background: #22c55e; }
 .is-warning > .a-scan-dot { background: #f59e0b; }
 .is-error > .a-scan-dot { background: #ef4444; }
+
+/* ---------- Fiche joueur ---------- */
+.a-player-head { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+.a-player-head > div { min-width: 0; }
+.a-player-head h1 { overflow-wrap: anywhere; }
+.s-avatar.a-player-avatar { width: 76px; height: 76px; font-size: 1.7rem; border: 2px solid #333; }
+.a-player-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+.a-kpi-value.a-kpi-small { font-size: clamp(1rem, 2.6vw, 1.2rem); }
+.a-access { display: flex; flex-direction: column; gap: 0.5rem; }
+.a-access form { margin: 0; }
+details.a-edit { margin-bottom: 0; }
+@media (max-width: 600px) {
+    .s-avatar.a-player-avatar { width: 58px; height: 58px; font-size: 1.3rem; }
+}
+details.a-edit { scroll-margin-top: 6rem; }
+.rtable .t-badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+@media (max-width: 860px) {
+    .rtable .t-badges { justify-content: flex-end; }
+}
