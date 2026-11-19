@@ -37,7 +37,7 @@ $footer_email = defined('ASSO_EMAIL') && ASSO_EMAIL !== '' ? ASSO_EMAIL : 'conta
             <h2>Contact</h2>
             <ul>
                 <li><?= ui_icon('mail', 17) ?><a href="mailto:<?= e($footer_email) ?>"><?= e($footer_email) ?></a></li>
-                <!-- <li><?= ui_icon('phone', 17) ?><a href="tel:<?= e($footer_phone_href) ?>"><?= e($footer_phone) ?></a></li> -->
+                <li><?= ui_icon('phone', 17) ?><a href="tel:<?= e($footer_phone_href) ?>"><?= e($footer_phone) ?></a>
                 <li><?= ui_icon('pin', 17) ?><span>Puy-de-Dôme (63)</span></li>
             </ul>
         </div>
