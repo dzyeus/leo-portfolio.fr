@@ -24,7 +24,7 @@ define('ASSO_ADDRESS', "Adresse du siège\n63000 Ville");
 define('ASSO_RNA', 'W000000000');          // N° RNA (récépissé de préfecture)
 define('ASSO_SIRET', '');                   // Laisser vide si pas encore de SIRET
 define('ASSO_EMAIL', 'contact@mafia-airsoft.com');
-define('ASSO_PHONE', '06 80 85 08 46');
+define('ASSO_PHONE', '07 44 92 67 40');
 // Directeur de la publication (mentions légales) : en général le président de l'asso
 define('ASSO_PUBLICATION_DIRECTOR', 'Prénom NOM, président');
 // Mention TVA : une association non lucrative est en général exonérée.
